@@ -30,6 +30,8 @@ pub mod system_dialogs;
 fn android_main(android: winit::platform::android::activity::AndroidApp) {
     android_logger::init_once(android_logger::Config::default().with_max_level(log::LevelFilter::Info).with_tag("PhotoCraft"));
     let data_dir = android.internal_data_path().unwrap_or_else(|| std::path::PathBuf::from("/data/data").join(jni_bridge::PACKAGE).join("files"));
+    let activity_app = android.clone();
+    jni_bridge::set_activity(Box::new(move || activity_app.activity_as_ptr()));
     let keyboard_app = android.clone();
     let keyboard: shell::KeyboardFn = Box::new(move |show| {
         if show {

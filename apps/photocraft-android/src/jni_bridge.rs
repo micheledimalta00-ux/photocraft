@@ -13,19 +13,40 @@ use jni::{Env, JavaVM, jni_sig, jni_str};
 /// The Android package name (must match `android/app/build.gradle.kts`).
 pub const PACKAGE: &str = "com.storytold.photocraft";
 
+/// Hands out the running Activity's JNI reference (see [`set_activity`]).
+type ActivityFn = Box<dyn Fn() -> *mut std::ffi::c_void + Send + Sync>;
+
+static ACTIVITY: std::sync::Mutex<Option<ActivityFn>> = std::sync::Mutex::new(None);
+
+/// Tell the bridge how to reach the Activity. `ndk-context` only holds the *Application*, which
+/// has none of `PhotoCraftActivity`'s methods (nor `startActivity` for results), so the entry
+/// point passes a function asking `AndroidApp` for the current Activity reference.
+pub fn set_activity(activity: ActivityFn) {
+    *ACTIVITY.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(activity);
+}
+
+fn activity_ptr() -> Option<*mut std::ffi::c_void> {
+    let guard = ACTIVITY.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    guard.as_ref().map(|f| f()).filter(|p| !p.is_null())
+}
+
 fn with_activity<T>(f: impl FnOnce(&mut Env, &JObject) -> jni::errors::Result<T>) -> Result<T, String> {
     let ctx = ndk_context::android_context();
-    if ctx.vm().is_null() || ctx.context().is_null() {
+    let Some(activity_raw) = activity_ptr() else {
+        return Err("no Android activity".into());
+    };
+    if ctx.vm().is_null() {
         return Err("no Android context".into());
     }
     // SAFETY: ndk-context is initialised by android-activity before `android_main` runs with the
     // process's JavaVM, which lives as long as the process; the pointer was checked non-null.
     let vm = unsafe { JavaVM::from_raw(ctx.vm().cast()) };
     vm.attach_current_thread(|env| {
-        // SAFETY: `context()` is a global reference to the running Activity held by
-        // android-activity for the life of the process, so it is a valid jobject here; it is
-        // only borrowed (never deleted) through this local wrapper.
-        let activity = unsafe { JObject::from_raw(env, ctx.context().cast()) };
+        // SAFETY: `activity_raw` is the global reference to the running Activity that
+        // `AndroidApp::activity_as_ptr` returned just now; android-activity keeps it alive while
+        // the `AndroidApp` lives (for the whole of `android_main`). It is only borrowed through
+        // this local wrapper, never deleted.
+        let activity = unsafe { JObject::from_raw(env, activity_raw.cast()) };
         let result = f(env, &activity);
         if env.exception_check() {
             env.exception_clear();
