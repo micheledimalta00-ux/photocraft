@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
+      CARGO_TERM_COLOR: never
       # Secrets can't be read in a step's `if`; this flag can.
       HAS_SIGNING_KEY: ${{ secrets.PHOTOCRAFT_KEYSTORE_BASE64 != '' }}
     steps:
@@ -36,7 +37,7 @@ jobs:
           cat > "$RUNNER_TEMP/report.sh" <<'SH'
           report() {
             local body
-            body=$(grep -v '^\s*$' "$1" | tail -n 80 | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            body=$(sed -e 's/\x1b\[[0-9;]*m//g' "$1" | grep -v -e '^\s*$' -e '^ *Compiling ' -e '^ *Downloaded ' | tail -n 60 | cut -c1-300 | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
             echo "::error title=$2::$body"
           }
           SH
@@ -49,6 +50,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: android
+          # Keep compiled dependencies even when a build fails, so the next attempt is quick.
+          cache-on-failure: true
 
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
