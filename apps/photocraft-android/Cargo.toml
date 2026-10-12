@@ -40,7 +40,8 @@ jni = "0.22"
 ndk-context = "0.1"
 
 [target.'cfg(target_os = "android")'.dependencies]
-eframe = { workspace = true, features = ["wgpu", "accesskit", "android-native-activity"] }
+# No "accesskit": eframe supports it on Android only with GameActivity.
+eframe = { workspace = true, features = ["wgpu", "android-native-activity"] }
 android_logger = "0.15"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
