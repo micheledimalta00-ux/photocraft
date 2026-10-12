@@ -1,12 +1,13 @@
-//! The few Java calls a native activity needs: whether the app may read shared storage, and
-//! opening the settings page that grants it ("All files access", Android 11+).
+//! The Java side of the app: the system pickers in `PhotoCraftActivity` (gallery, camera,
+//! documents, "Save as"), plus storage access for the in-app folder browser ("All files access",
+//! Android 11+).
 //!
 //! This is the crate's only `unsafe` besides the exported entry point: turning the raw JavaVM and
 //! Activity pointers that `ndk-context` holds into `jni` handles. Every call returns an error
 //! instead of panicking, and a pending Java exception is cleared so it can't abort the app.
 #![allow(unsafe_code)]
 
-use jni::objects::{JObject, JValue};
+use jni::objects::{JObject, JObjectArray, JString, JValue};
 use jni::{Env, JavaVM, jni_sig, jni_str};
 
 /// The Android package name (must match `android/app/build.gradle.kts`).
@@ -100,4 +101,144 @@ fn open_settings_page() -> Result<(), String> {
         env.call_method(activity, jni_str!("startActivity"), jni_sig!("(Landroid/content/Intent;)V"), &[JValue::Object(&intent)])?;
         Ok(())
     })
+}
+
+/// What a system picker answered (see `PhotoCraftActivity.takeResult`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PickResult {
+    /// Picked content, copied into the app cache: (display name, path).
+    Files(Vec<(String, String)>),
+    /// The document "Save as" created: its content URI and display name.
+    SaveTarget {
+        uri: String,
+        name: String,
+    },
+    Cancelled,
+    Error(String),
+}
+
+impl PickResult {
+    /// Parse the string array the activity hands back.
+    pub fn parse(parts: &[String]) -> Self {
+        match parts.split_first() {
+            Some((kind, rest)) if kind == "files" => {
+                let files: Vec<(String, String)> = rest.chunks_exact(2).filter_map(|p| Some((p.first()?.clone(), p.get(1)?.clone()))).collect();
+                if files.is_empty() { Self::Cancelled } else { Self::Files(files) }
+            }
+            Some((kind, rest)) if kind == "save" => match rest {
+                [uri, name, ..] => Self::SaveTarget { uri: uri.clone(), name: name.clone() },
+                _ => Self::Error("the save dialog gave no destination".into()),
+            },
+            Some((kind, _)) if kind == "cancel" => Self::Cancelled,
+            Some((kind, rest)) if kind == "error" => Self::Error(rest.first().cloned().unwrap_or_else(|| "unknown error".into())),
+            _ => Self::Error("unexpected answer from the picker".into()),
+        }
+    }
+}
+
+/// The gallery (the system Photo Picker on Android 13+).
+pub fn pick_images(multiple: bool) -> Result<(), String> {
+    with_activity(|env, activity| {
+        env.call_method(activity, jni_str!("pickImages"), jni_sig!("(Z)V"), &[JValue::Bool(multiple)])?;
+        Ok(())
+    })
+}
+
+/// Any file, from any storage provider.
+pub fn pick_files(multiple: bool) -> Result<(), String> {
+    with_activity(|env, activity| {
+        env.call_method(activity, jni_str!("pickFiles"), jni_sig!("(Z)V"), &[JValue::Bool(multiple)])?;
+        Ok(())
+    })
+}
+
+/// A new photo from the camera app.
+pub fn take_photo() -> Result<(), String> {
+    with_activity(|env, activity| {
+        env.call_method(activity, jni_str!("takePhoto"), jni_sig!("()V"), &[])?;
+        Ok(())
+    })
+}
+
+/// The system "Save as" dialog.
+pub fn create_document(name: &str, mime: &str) -> Result<(), String> {
+    with_activity(|env, activity| {
+        let name = env.new_string(name)?;
+        let mime = env.new_string(mime)?;
+        env.call_method(
+            activity,
+            jni_str!("createDocument"),
+            jni_sig!("(Ljava/lang/String;Ljava/lang/String;)V"),
+            &[JValue::Object(&name), JValue::Object(&mime)],
+        )?;
+        Ok(())
+    })
+}
+
+/// Copy the file at `path` over the document `uri` (from "Save as").
+pub fn copy_to_uri(path: &str, uri: &str) -> Result<(), String> {
+    let error = with_activity(|env, activity| {
+        let path = env.new_string(path)?;
+        let uri = env.new_string(uri)?;
+        let out = env
+            .call_method(
+                activity,
+                jni_str!("copyToUri"),
+                jni_sig!("(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"),
+                &[JValue::Object(&path), JValue::Object(&uri)],
+            )?
+            .l()?;
+        if out.is_null() {
+            return Ok(None);
+        }
+        let text = env.cast_local::<JString>(out)?;
+        Ok(Some(text.try_to_string(env)?))
+    })?;
+    match error {
+        None => Ok(()),
+        Some(e) => Err(e),
+    }
+}
+
+/// The answer to the last picker, once it has one.
+pub fn take_result() -> Result<Option<PickResult>, String> {
+    let parts = with_activity(|env, activity| {
+        let obj = env.call_method(activity, jni_str!("takeResult"), jni_sig!("()[Ljava/lang/String;"), &[])?.l()?;
+        if obj.is_null() {
+            return Ok(None);
+        }
+        let array = env.cast_local::<JObjectArray<JString>>(obj)?;
+        let n = array.len(env)?;
+        let mut parts = Vec::with_capacity(n.min(1024));
+        for i in 0..n {
+            let item = array.get_element(env, i)?;
+            parts.push(if item.is_null() { String::new() } else { item.try_to_string(env)? });
+        }
+        Ok(Some(parts))
+    })?;
+    Ok(parts.map(|p| PickResult::parse(&p)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| (*x).to_string()).collect()
+    }
+
+    #[test]
+    fn picker_answers_parse_without_panicking() {
+        assert_eq!(
+            PickResult::parse(&s(&["files", "a.jpg", "/c/a.jpg", "b.png", "/c/b.png"])),
+            PickResult::Files(vec![("a.jpg".into(), "/c/a.jpg".into()), ("b.png".into(), "/c/b.png".into())])
+        );
+        assert_eq!(PickResult::parse(&s(&["files"])), PickResult::Cancelled);
+        assert_eq!(PickResult::parse(&s(&["files", "odd"])), PickResult::Cancelled);
+        assert_eq!(PickResult::parse(&s(&["save", "content://x", "out.png"])), PickResult::SaveTarget { uri: "content://x".into(), name: "out.png".into() });
+        assert!(matches!(PickResult::parse(&s(&["save"])), PickResult::Error(_)));
+        assert_eq!(PickResult::parse(&s(&["cancel"])), PickResult::Cancelled);
+        assert_eq!(PickResult::parse(&s(&["error", "boom"])), PickResult::Error("boom".into()));
+        assert!(matches!(PickResult::parse(&[]), PickResult::Error(_)));
+    }
 }

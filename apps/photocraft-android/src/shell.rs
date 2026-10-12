@@ -1,11 +1,8 @@
-//! The Android shell around [`PhotocraftApp`]: the in-app file browser, the on-screen keyboard,
+//! The Android shell around [`PhotocraftApp`]: the system Open/Save pickers, the on-screen keyboard,
 //! A− / A+ buttons for Preferences › Interface › UI Scale (the desktop layout needs more points
-//! than a phone has at its native scale; a first launch starts at three quarters of it), and a
-//! banner while storage access is missing.
+//! than a phone has at its native scale; a first launch starts at three quarters of it).
 
-use std::cell::RefCell;
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use photocraft_engine::Session;
 use photocraft_engine::prefs::UiScale;
@@ -13,7 +10,7 @@ use photocraft_ui_egui::PhotocraftApp;
 use photocraft_ui_egui::i18n;
 use photocraft_ui_egui::theme::ThemeKind;
 
-use crate::picker::Slot;
+use crate::system_dialogs::{Dialogs, Slot};
 
 /// The fixed UI scales (Preferences › Interface › UI Scale), in percent, smallest first.
 fn fixed_scales() -> impl Iterator<Item = (UiScale, f32)> {
@@ -42,15 +39,11 @@ pub type KeyboardFn = Box<dyn FnMut(bool)>;
 
 pub struct AndroidShell {
     app: PhotocraftApp,
-    picker: Slot,
+    dialogs: Slot,
     keyboard: Option<KeyboardFn>,
     keyboard_shown: bool,
     /// Set the first-launch UI scale once the screen's own scale is known.
     pick_first_scale: bool,
-    /// Whether shared storage is readable; re-checked when the user may have changed it.
-    storage_access: bool,
-    /// Frames until the next storage check (cheap, but a JNI round trip).
-    access_check_in: u32,
     on_android: bool,
 }
 
@@ -60,39 +53,16 @@ impl AndroidShell {
             log::warn!("couldn't create {}: {e}", data_dir.display());
         }
         PhotocraftApp::setup_context(&cc.egui_ctx, ThemeKind::Pro);
-        let picker: Slot = Rc::new(RefCell::new(None));
+        let dialogs = Dialogs::new(&data_dir);
         let first_launch = !crate::services::prefs_path(&data_dir).exists();
-        let mut app = PhotocraftApp::new(Session::new(), crate::services::services(data_dir.clone(), picker.clone()));
+        let mut app = PhotocraftApp::new(Session::new(), crate::services::services(data_dir.clone(), dialogs.clone(), on_android));
         app.set_theme(&cc.egui_ctx, ThemeKind::Pro);
         if let Some(rs) = cc.wgpu_render_state.clone() {
             log::info!("photocraft-android: wgpu backend {:?}", rs.adapter.get_info().backend);
             app.set_wgpu(rs);
         }
         let pick_first_scale = first_launch && on_android && app.session.prefs().interface.ui_scale == UiScale::Auto;
-        Self { app, picker, keyboard, keyboard_shown: false, pick_first_scale, storage_access: true, access_check_in: 0, on_android }
-    }
-
-    fn check_storage_access(&mut self) {
-        if !self.on_android {
-            return;
-        }
-        if self.access_check_in > 0 {
-            self.access_check_in -= 1;
-            return;
-        }
-        self.access_check_in = 120;
-        match crate::jni_bridge::has_all_files_access() {
-            Ok(granted) => self.storage_access = granted,
-            Err(e) => log::warn!("couldn't check storage access: {e}"),
-        }
-    }
-
-    fn grant_access(&mut self) {
-        if let Err(e) = crate::jni_bridge::open_all_files_settings() {
-            log::error!("couldn't open the storage access settings: {e}");
-        }
-        // Check again soon after the user comes back.
-        self.access_check_in = 0;
+        Self { app, dialogs, keyboard, keyboard_shown: false, pick_first_scale, on_android }
     }
 
     fn sync_keyboard(&mut self, ctx: &egui::Context) {
@@ -152,40 +122,13 @@ impl eframe::App for AndroidShell {
             log::info!("first launch: screen scale {native}, UI scale {}%", scale.name());
             self.app.session.edit_prefs(|p| p.interface.ui_scale = scale);
         }
-        self.check_storage_access();
         self.app.logic(ctx, frame);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-        if !self.storage_access {
-            let mut grant = false;
-            egui::Panel::top("android_storage_access").show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(i18n::t("To open and save files in your folders, allow “All files access”."));
-                    grant = ui.button(i18n::t("Allow…")).clicked();
-                });
-            });
-            if grant {
-                self.grant_access();
-            }
-        }
         self.app.ui(ui, frame);
         let ctx = ui.ctx().clone();
-        // The settings page opens after the picker's borrow ends; an answered picker is dropped.
-        let (answered, asked_for_access) = match self.picker.borrow_mut().as_mut() {
-            Some(picker) => {
-                let mut asked = false;
-                let answered = picker.show(&ctx, self.on_android, &mut || asked = true);
-                (answered, asked)
-            }
-            None => (false, false),
-        };
-        if asked_for_access {
-            self.grant_access();
-        }
-        if answered {
-            *self.picker.borrow_mut() = None;
-        }
+        self.dialogs.borrow_mut().frame(&ctx, self.on_android);
         self.scale_control(&ctx);
         self.sync_keyboard(&ctx);
     }

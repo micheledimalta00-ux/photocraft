@@ -1,14 +1,13 @@
-//! An in-app file browser standing in for the system Open/Save/Folder dialogs.
+//! An in-app file browser over shared storage (`/storage/emulated/0`).
 //!
-//! Android has no file dialog a native activity can call without Java code, and the Storage
-//! Access Framework hands out content URIs rather than paths. PhotoCraft opens and saves by path,
-//! so this browser walks shared storage (`/storage/emulated/0`) directly; that needs the
-//! "All files access" permission, which [`crate::jni_bridge`] can open the settings page for.
+//! On Android it is only used to choose a folder (Open and Save go through the system pickers,
+//! [`crate::system_dialogs`]): engine commands that work on a folder need a real path, which the
+//! system folder picker doesn't give. Walking shared storage needs "All files access", which
+//! [`crate::jni_bridge`] can open the settings page for. The desktop preview uses it for
+//! everything.
 
-use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 use photocraft_ui_egui::i18n;
 use photocraft_ui_egui::{FileDialogAnswer, FileDialogReply, FileDialogRequest};
@@ -22,9 +21,6 @@ pub const OPEN_EXTS: &[&str] = &[
 
 /// Shared storage as apps see it.
 pub const STORAGE_ROOT: &str = "/storage/emulated/0";
-
-/// The dialog waiting to be shown, shared between `Services::file_dialog` and the shell.
-pub type Slot = Rc<RefCell<Option<Picker>>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Mode {
@@ -263,6 +259,14 @@ impl Drop for Picker {
 /// A plain file name: not empty, no separators, not `.`/`..`.
 pub fn valid_file_name(name: &str) -> bool {
     !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\0'])
+}
+
+/// `name` as a single, harmless file name: separators and control characters become `_`, and
+/// leading dots are dropped (no hidden files, no `..`).
+pub fn sanitize_name(name: &str) -> String {
+    let s: String = name.chars().map(|c| if matches!(c, '/' | '\\' | ':' | '\0') || c.is_control() { '_' } else { c }).collect();
+    let s = s.trim().trim_start_matches('.').trim();
+    if s.is_empty() { "image".to_string() } else { s.to_string() }
 }
 
 /// The visible entries of `dir`: folders first, then files whose extension is in `filter` (all

@@ -1,5 +1,5 @@
-// The APK wraps the Rust library `libphotocraft_android.so` in a NativeActivity: there is no
-// Java or Kotlin code (android:hasCode="false"). Build the library first into src/main/jniLibs:
+// The APK wraps the Rust library `libphotocraft_android.so` in PhotoCraftActivity, a small
+// NativeActivity subclass that adds the system pickers. Build the library first into src/main/jniLibs:
 //   cargo ndk -t arm64-v8a -P 26 -o android/app/src/main/jniLibs build --release -p photocraft-android --lib
 // then `gradle -p android assembleRelease`. See android/README.md.
 
@@ -42,6 +42,11 @@ android {
             isMinifyEnabled = false
             signingConfig = if (keystorePath != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     packaging {

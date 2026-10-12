@@ -40,9 +40,13 @@ To try the touch shell and file browser without a device:
 
 ## Using it
 
-- **Files**: File › Open and Save show an in-app browser over shared storage (Download,
-  Pictures, Camera, Documents). On first use a banner asks for **All files access**; tap
-  *Allow…*, enable it for PhotoCraft, and come back.
+- **Opening**: File › Open asks where from: **Gallery** (the system photo picker), **Take a
+  Photo** (the camera app; the photo also stays in the gallery) or **Files** (any app or cloud
+  drive: Downloads, Drive, a USB stick…). No storage permission is needed.
+- **Saving**: Save As opens the system "Save as" dialog; later File › Save updates that same
+  file. A picture opened from the gallery is never overwritten in place: use Save As.
+- **Choosing a folder** (for commands that work on a folder) uses an in-app browser, which asks
+  for **All files access** the first time.
 - **Interface size**: the **A− / A+** buttons at the bottom right scale the whole interface.
 - **Keyboard**: the on-screen keyboard opens when a text field has focus.
 - **Long press** opens egui context menus where the app uses them.

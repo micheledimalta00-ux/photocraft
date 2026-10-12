@@ -1,13 +1,14 @@
-//! Platform services for Android: files by path (shared storage), preferences in the app's
-//! private folder, and the in-app file browser in place of system dialogs.
+//! Platform services for Android: Open and Save through the system pickers
+//! ([`crate::system_dialogs`]), preferences in the app's private folder.
 
 use std::path::{Path, PathBuf};
 
 use photocraft_codecs::{ChannelLayout, EncodeOptions, Image};
 use photocraft_doc::Document;
-use photocraft_ui_egui::Services;
+use photocraft_ui_egui::{FileDialogAnswer, FileDialogRequest, Services, i18n};
 
-use crate::picker::{Picker, Slot};
+use crate::picker::Picker;
+use crate::system_dialogs::{Pending, Slot};
 
 /// Where the preferences file lives inside the app's private folder.
 pub fn prefs_path(data_dir: &Path) -> PathBuf {
@@ -30,10 +31,27 @@ pub fn write_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
     })
 }
 
-pub fn services(data_dir: PathBuf, picker: Slot) -> Services {
+/// Write a save: into its staged file, then to the document "Save as" chose for it. A copy of a
+/// picture picked from another app is never overwritten in place; that needs Save As.
+fn write_document(dialogs: &Slot, path: &str, bytes: &[u8]) -> Result<(), String> {
+    let target = dialogs.borrow().save_targets.get(path).cloned();
+    if target.is_none() && crate::system_dialogs::is_picked_copy(path) {
+        return Err(i18n::t("This picture was opened from another app: use File › Save As… to choose where to save it.").to_string());
+    }
+    write_file(Path::new(path), bytes)?;
+    match target {
+        Some(uri) => crate::jni_bridge::copy_to_uri(path, &uri),
+        None => Ok(()),
+    }
+}
+
+/// `system`: use the Android pickers (on a device); otherwise the in-app browser for everything
+/// (the desktop preview).
+pub fn services(data_dir: PathBuf, dialogs: Slot, system: bool) -> Services {
     let prefs = prefs_path(&data_dir);
     let prefs_out = prefs.clone();
     let app_dir = data_dir.clone();
+    let writes = dialogs.clone();
     Services {
         import: Some(Box::new(|name: &str, bytes: &[u8], max_svg_group_depth: usize| {
             photocraft_io::import_with_svg_group_depth(name, bytes, max_svg_group_depth).map(|r| (r.document, r.warnings)).map_err(|e| e.to_string())
@@ -54,10 +72,31 @@ pub fn services(data_dir: PathBuf, picker: Slot) -> Services {
             photocraft_io::export(doc, path, &opts).map(|r| (r.bytes, r.warnings)).map_err(|e| e.to_string())
         })),
         file_dialog: Some(Box::new(move |request, _frame, reply| {
-            // A newer dialog replaces one still open; dropping the old one answers it with Cancel.
-            *picker.borrow_mut() = Some(Picker::new(request, reply, &app_dir));
+            // A newer dialog replaces one still open; dropping the old reply answers it with Cancel.
+            let pending = match request {
+                FileDialogRequest::Open { multiple, extensions, .. } if system => {
+                    if crate::system_dialogs::wants_gallery(extensions.as_deref()) {
+                        Pending::Chooser { multiple, reply }
+                    } else {
+                        match crate::jni_bridge::pick_files(multiple) {
+                            Ok(()) => Pending::Waiting { reply, save_ext: None },
+                            Err(e) => return reply.send(Some(FileDialogAnswer::Unavailable(e))),
+                        }
+                    }
+                }
+                FileDialogRequest::Save { suggested } if system => {
+                    let name = Path::new(&suggested).file_name().map_or_else(|| suggested.clone(), |n| n.to_string_lossy().to_string());
+                    let ext = Path::new(&name).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+                    match crate::jni_bridge::create_document(&name, crate::system_dialogs::mime_for(&ext)) {
+                        Ok(()) => Pending::Waiting { reply, save_ext: Some(ext) },
+                        Err(e) => return reply.send(Some(FileDialogAnswer::Unavailable(e))),
+                    }
+                }
+                request => Pending::Browser(Picker::new(request, reply, &app_dir)),
+            };
+            dialogs.borrow_mut().pending = Some(pending);
         })),
-        write: Some(Box::new(|path: &str, bytes: &[u8]| write_file(Path::new(path), bytes))),
+        write: Some(Box::new(move |path: &str, bytes: &[u8]| write_document(&writes, path, bytes))),
         encode_png: Some(Box::new(|w, h, rgba| {
             let img = Image::from_u8(w, h, ChannelLayout::Rgba, rgba.to_vec()).map_err(|e| e.to_string())?;
             photocraft_codecs::encode(&img, photocraft_codecs::Format::Png, &EncodeOptions::default()).map_err(|e| e.to_string())

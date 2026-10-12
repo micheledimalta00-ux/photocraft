@@ -6,8 +6,8 @@
 //!
 //! Differences from the desktop app:
 //! - no TCP control server, plug-ins host or crash-recovery autosave;
-//! - File › Open/Save use an in-app browser over shared storage ([`picker`]), which needs the
-//!   "All files access" permission (a banner offers to open its settings page);
+//! - File › Open offers the gallery, the camera or any file, and Save As uses the system "Save as"
+//!   dialog ([`system_dialogs`], through `PhotoCraftActivity` in `android/`);
 //! - preferences live in the app's private folder;
 //! - "A− / A+" buttons step Preferences › Interface › UI Scale, since the desktop layout needs
 //!   more points than a phone has at its native scale (a first launch picks a smaller scale).
@@ -18,6 +18,7 @@ pub mod jni_bridge;
 pub mod picker;
 pub mod services;
 pub mod shell;
+pub mod system_dialogs;
 
 /// The entry point `NativeActivity` calls (through android-activity) once the native library is
 /// loaded.
