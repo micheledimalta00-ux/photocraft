@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Open and save files by path in shared storage (the in-app file browser). Android 11+
+         grants this through "All files access" in Settings; older versions ask at runtime. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
+    <!-- wgpu renders with Vulkan, falling back to OpenGL ES 3. -->
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+
+    <application
+        android:label="PhotoCraft"
+        android:icon="@mipmap/ic_launcher"
+        android:hasCode="false"
+        android:requestLegacyExternalStorage="true"
+        android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+
+        <activity
+            android:name="android.app.NativeActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="sensorLandscape"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density">
+
+            <!-- libphotocraft_android.so, built from apps/photocraft-android -->
+            <meta-data android:name="android.app.lib_name" android:value="photocraft_android" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

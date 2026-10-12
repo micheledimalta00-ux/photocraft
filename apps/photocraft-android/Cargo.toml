@@ -1,0 +1,48 @@
+[package]
+name = "photocraft-android"
+description = "Photocraft on Android (eframe native-activity runner, Vulkan/GL through wgpu)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# The Android entry point (`android_main`, exported by name) and the few JNI calls that open the
+# system settings need `unsafe`; they live only in `src/jni_bridge.rs` and the entry point in
+# `src/lib.rs`, each block with a SAFETY comment. Everything else in the crate is denied `unsafe`.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+[lib]
+# cdylib: the `libphotocraft_android.so` that NativeActivity loads; rlib: so `cargo check` and
+# tests build it on the desktop too.
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Open HEIC/HEIF photos (needs the NDK's C++ toolchain for libheif; off by default here).
+heif = ["photocraft-codecs/heif"]
+
+[dependencies]
+photocraft-engine = { workspace = true }
+photocraft-io = { workspace = true }
+photocraft-codecs = { workspace = true }
+photocraft-doc = { workspace = true }
+photocraft-ui-egui = { workspace = true }
+egui = { workspace = true }
+log = { workspace = true }
+serde_json = { workspace = true }
+# JNI is plain FFI types and builds on every platform, so the settings bridge is type-checked on
+# the desktop as well; it is only called on Android.
+jni = "0.22"
+ndk-context = "0.1"
+
+[target.'cfg(target_os = "android")'.dependencies]
+eframe = { workspace = true, features = ["wgpu", "accesskit", "android-native-activity"] }
+android_logger = "0.15"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+# The desktop preview (`--example desktop`) needs a windowing backend on Linux.
+eframe = { workspace = true, features = ["wgpu", "accesskit", "x11", "wayland"] }

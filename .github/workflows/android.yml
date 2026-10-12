@@ -1,0 +1,83 @@
+name: android
+
+# Builds the Android APK (apps/photocraft-android wrapped by the Gradle project in android/).
+# Run it from the Actions tab ("Run workflow"), or let it run on pushes that touch the port.
+# The APK is attached to the run as the "PhotoCraft-android" artifact.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "apps/photocraft-android/**"
+      - "android/**"
+      - ".github/workflows/android.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # Secrets can't be read in a step's `if`; this flag can.
+      HAS_SIGNING_KEY: ${{ secrets.PHOTOCRAFT_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Build the native library
+        env:
+          # The runner image ships the Android SDK and NDKs; use the newest NDK.
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
+        run: |
+          cargo ndk -t arm64-v8a -P 26 -o android/app/src/main/jniLibs \
+            build --release --locked -p photocraft-android --lib
+          ls -la android/app/src/main/jniLibs/arm64-v8a
+
+      - name: Decode the signing key (optional)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.PHOTOCRAFT_KEYSTORE_BASE64 }}
+        if: env.HAS_SIGNING_KEY == 'true'
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/photocraft.jks"
+          echo "PHOTOCRAFT_KEYSTORE=$RUNNER_TEMP/photocraft.jks" >> "$GITHUB_ENV"
+
+      - name: Build the APK
+        env:
+          PHOTOCRAFT_KEYSTORE_PASSWORD: ${{ secrets.PHOTOCRAFT_KEYSTORE_PASSWORD }}
+          PHOTOCRAFT_KEY_ALIAS: ${{ secrets.PHOTOCRAFT_KEY_ALIAS }}
+          PHOTOCRAFT_KEY_PASSWORD: ${{ secrets.PHOTOCRAFT_KEY_PASSWORD }}
+          PHOTOCRAFT_VERSION_CODE: ${{ github.run_number }}
+        run: |
+          gradle -p android assembleRelease --no-daemon
+          mv android/app/build/outputs/apk/release/app-release.apk "PhotoCraft-${GITHUB_SHA::7}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhotoCraft-android
+          path: PhotoCraft-*.apk
+          if-no-files-found: error
