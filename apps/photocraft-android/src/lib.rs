@@ -26,7 +26,7 @@ pub mod shell;
 // SAFETY: exporting the symbol by name is how android-activity finds the entry point; it is
 // defined exactly once in this library and has the signature android-activity expects.
 #[unsafe(no_mangle)]
-fn android_main(android: eframe::winit::platform::android::activity::AndroidApp) {
+fn android_main(android: winit::platform::android::activity::AndroidApp) {
     android_logger::init_once(android_logger::Config::default().with_max_level(log::LevelFilter::Info).with_tag("PhotoCraft"));
     let data_dir = android.internal_data_path().unwrap_or_else(|| std::path::PathBuf::from("/data/data").join(jni_bridge::PACKAGE).join("files"));
     let keyboard_app = android.clone();

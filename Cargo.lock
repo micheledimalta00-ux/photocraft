@@ -4289,6 +4289,7 @@ dependencies = [
  "photocraft-io",
  "photocraft-ui-egui",
  "serde_json",
+ "winit",
 ]
 
 [[package]]

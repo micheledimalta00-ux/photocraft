@@ -43,6 +43,8 @@ ndk-context = "0.1"
 # No "accesskit": eframe supports it on Android only with GameActivity.
 eframe = { workspace = true, features = ["wgpu", "android-native-activity"] }
 android_logger = "0.15"
+# `AndroidApp` for the entry point (eframe 0.36 doesn't re-export winit); already in Cargo.lock.
+winit = { version = "0.30", default-features = false, features = ["android-native-activity"] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 # The desktop preview (`--example desktop`) needs a windowing backend on Linux.
