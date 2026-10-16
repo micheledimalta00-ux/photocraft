@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="export" path="export/" />
+    <files-path name="internal_camera" path="Pictures/" />
+    <external-files-path name="camera" path="Pictures/" />
+</paths>

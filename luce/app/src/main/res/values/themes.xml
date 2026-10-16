@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Luce" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/luce_background</item>
+        <item name="android:statusBarColor">@color/luce_background</item>
+        <item name="android:navigationBarColor">@color/luce_background</item>
+        <item name="android:colorAccent">@color/luce_accent</item>
+    </style>
+</resources>

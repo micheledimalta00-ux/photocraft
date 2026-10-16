@@ -1,0 +1,81 @@
+name: luce
+
+# Compila l'app Luce (cartella luce/), esegue i test del motore e pubblica l'APK firmato
+# come Release scaricabile direttamente dal telefono.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "luce/**"
+      - ".github/workflows/luce.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: luce-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: luce
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up failure reports
+        run: |
+          cat > "$RUNNER_TEMP/report.sh" <<'SH'
+          report() {
+            local body
+            body=$( { grep -E '^e: |error:|What went wrong|FAILED|Exception' "$1" | head -n 45; echo '----'; tail -n 25 "$1"; } \
+              | sed -e 's/\x1b\[[0-9;]*m//g' -e 's#file:///home/runner/work/[^/]*/[^/]*/luce/##g' \
+              | cut -c1-400 | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=$2::$body"
+          }
+          SH
+          echo "BASH_ENV=$RUNNER_TEMP/report.sh" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Unit tests (motore di elaborazione)
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace :app:testReleaseUnitTest 2>&1 | tee "$RUNNER_TEMP/test.log" \
+            || { report "$RUNNER_TEMP/test.log" "Test falliti"; exit 1; }
+
+      - name: Build APK
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace :app:assembleRelease 2>&1 | tee "$RUNNER_TEMP/build.log" \
+            || { report "$RUNNER_TEMP/build.log" "Compilazione fallita"; exit 1; }
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Luce.apk"
+          ls -la "$RUNNER_TEMP/Luce.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Luce-apk
+          path: ${{ runner.temp }}/Luce.apk
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: luce-build-${{ github.run_number }}
+          name: Luce (build ${{ github.run_number }})
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          files: ${{ runner.temp }}/Luce.apk
+          body: |
+            APK di Luce, editor fotografico open source per Android.
+            Scarica **Luce.apk** dal telefono e installalo (consenti l'installazione da origini sconosciute).

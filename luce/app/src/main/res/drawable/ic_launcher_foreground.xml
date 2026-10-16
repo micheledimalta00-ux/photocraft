@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icona originale di Luce: un sole stilizzato su un orizzonte -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFB547"
+        android:pathData="M54,36a14,14 0,1 1,0 28a14,14 0,1 1,0 -28z" />
+    <path
+        android:strokeColor="#FFFFB547"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M54,26L54,30M54,70L54,74M30,50L34,50M74,50L78,50M37,33L40,36M68,64L71,67M71,33L68,36M40,64L37,67" />
+    <path
+        android:fillColor="#FF3D9BFF"
+        android:pathData="M26,72L82,72L82,78L26,78z" />
+</vector>
