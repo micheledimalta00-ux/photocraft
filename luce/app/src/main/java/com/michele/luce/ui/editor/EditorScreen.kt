@@ -170,7 +170,9 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                 Button(onClick = onBack) { Text("Torna alla libreria") }
             }
             else -> BoxWithConstraints(Modifier.fillMaxSize()) {
-                val landscape = maxWidth > maxHeight
+                val boxW = this.maxWidth
+                val boxH = this.maxHeight
+                val landscape = boxW > boxH
                 if (landscape) {
                     Row(Modifier.fillMaxSize()) {
                         Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -179,7 +181,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         }
                         Column(
                             Modifier
-                                .width(if (maxWidth > 900.dp) 360.dp else 300.dp)
+                                .width(if (boxW > 900.dp) 360.dp else 300.dp)
                                 .fillMaxHeight()
                                 .background(LuceColors.Panel)
                         ) {
@@ -197,7 +199,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit) {
                         Column(
                             Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = maxHeight * 0.42f)
+                                .heightIn(max = boxH * 0.42f)
                                 .background(LuceColors.Panel)
                                 .verticalScroll(rememberScrollState())
                         ) {

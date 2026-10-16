@@ -40,7 +40,7 @@ jobs:
           SH
           echo "BASH_ENV=$RUNNER_TEMP/report.sh" >> "$GITHUB_ENV"
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
