@@ -20,6 +20,7 @@ android {
     signingConfigs {
         create("luce") {
             storeFile = rootProject.file("keystore/luce.jks")
+            storeType = "pkcs12"
             storePassword = "luce-open-source"
             keyAlias = "luce"
             keyPassword = "luce-open-source"

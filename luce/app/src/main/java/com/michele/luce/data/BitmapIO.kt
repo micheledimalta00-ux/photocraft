@@ -29,7 +29,8 @@ object BitmapIO {
     /** Dimensioni originali già orientate secondo EXIF. */
     fun originalSize(context: Context, uri: Uri): Pair<Int, Int>? {
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) } ?: return null
+        val stream = (try { context.contentResolver.openInputStream(uri) } catch (e: Exception) { null }) ?: return null
+        stream.use { BitmapFactory.decodeStream(it, null, opts) }
         if (opts.outWidth <= 0 || opts.outHeight <= 0) return null
         val o = exifOrientation(context, uri)
         val swap = o == ExifInterface.ORIENTATION_ROTATE_90 || o == ExifInterface.ORIENTATION_ROTATE_270 ||
@@ -43,8 +44,9 @@ object BitmapIO {
      */
     fun load(context: Context, uri: Uri, maxLongEdge: Int): LoadedImage {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        val boundsStream = context.contentResolver.openInputStream(uri)
             ?: throw IllegalStateException("Impossibile aprire il file")
+        boundsStream.use { BitmapFactory.decodeStream(it, null, bounds) }
         val w0 = bounds.outWidth
         val h0 = bounds.outHeight
         if (w0 <= 0 || h0 <= 0) throw IllegalStateException("Formato immagine non supportato")
