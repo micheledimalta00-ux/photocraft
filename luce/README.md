@@ -50,3 +50,4 @@ gradle :app:assembleRelease
 "Lightroom" e "Adobe" sono marchi di Adobe Inc.; Luce è un progetto indipendente e non è affiliato ad Adobe.
 
 Licenza: MIT.
+
