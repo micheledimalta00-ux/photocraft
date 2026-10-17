@@ -27,16 +27,11 @@ jobs:
           get magic_touch.tflite $B/interactive_segmenter/magic_touch/float32/1/magic_touch.tflite
           get face_landmarker.task $B/face_landmarker/face_landmarker/float16/1/face_landmarker.task
           get ade20k.tflite "https://tfhub.dev/sayakpaul/lite-model/deeplabv3-mobilenetv2-ade20k/1/default/2?lite-format=tflite"
-          for repo in https://repo1.maven.org/maven2 https://dl.google.com/dl/android/maven2; do
-            for a in tasks-vision tasks-core; do
-              echo "== $repo $a" >> info.txt
-              curl -fsSL "$repo/com/google/mediapipe/$a/maven-metadata.xml" >> info.txt 2>&1 || echo "no metadata" >> info.txt
-            done
-          done
-          M=https://repo1.maven.org/maven2/com/google/mediapipe
-          get tasks-vision-0.10.14.aar $M/tasks-vision/0.10.14/tasks-vision-0.10.14.aar
-          get tasks-core-0.10.14.aar $M/tasks-core/0.10.14/tasks-core-0.10.14.aar
-          get tasks-vision-0.10.14.pom $M/tasks-vision/0.10.14/tasks-vision-0.10.14.pom
+          G=https://dl.google.com/dl/android/maven2/com/google/mediapipe
+          get tasks-vision-0.10.32.aar $G/tasks-vision/0.10.32/tasks-vision-0.10.32.aar
+          get tasks-core-0.10.32.aar $G/tasks-core/0.10.32/tasks-core-0.10.32.aar
+          get tasks-vision-0.10.32.pom $G/tasks-vision/0.10.32/tasks-vision-0.10.32.pom
+          get tasks-core-0.10.32.pom $G/tasks-core/0.10.32/tasks-core-0.10.32.pom
           cat info.txt
       - name: Publish
         uses: softprops/action-gh-release@v2
