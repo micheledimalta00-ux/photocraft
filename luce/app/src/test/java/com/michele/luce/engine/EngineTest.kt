@@ -62,10 +62,13 @@ class EngineTest {
             vignetteAmount = -40f, grainAmount = 40f, sharpAmount = 80f, nrLuminance = 40f, nrColor = 50f,
             lensDistortion = 30f, chromaticAberration = 40f, straighten = -5f, flipV = true,
             masks = listOf(
-                Mask(1, "a", MaskType.LINEAR, adjust = LocalAdjust(exposure = -1f)),
-                Mask(2, "b", MaskType.RADIAL, invert = true, adjust = LocalAdjust(clarity = 20f)),
-                Mask(3, "c", MaskType.BRUSH, strokes = listOf(BrushStroke(listOf(0.1f, 0.1f, 0.5f, 0.5f))), adjust = LocalAdjust(exposure = 1f))
-            )
+                Mask(1, "a", listOf(MaskComponent(11, ComponentType.LINEAR)), adjust = LocalAdjust(exposure = -1f)),
+                Mask(2, "b", listOf(MaskComponent(12, ComponentType.RADIAL, invert = true), MaskComponent(13, ComponentType.COLOR_RANGE, CombineMode.INTERSECT, colorSamples = listOf(0.8f, 0.2f, 0.2f))), adjust = LocalAdjust(clarity = 20f, hue = 30f)),
+                Mask(3, "c", listOf(MaskComponent(14, ComponentType.BRUSH, strokes = listOf(BrushStroke(listOf(0.1f, 0.1f, 0.5f, 0.5f)))), MaskComponent(15, ComponentType.LUMINANCE_RANGE, CombineMode.SUBTRACT)), adjust = LocalAdjust(exposure = 1f, sharpness = 30f, noise = 20f))
+            ),
+            pointColors = listOf(PointColor(1, 0f, 0.7f, 0.5f, hueShift = 30f)),
+            calRedHue = 20f, calShadowsTint = 10f, removeCA = true, defringePurple = 5f,
+            tVertical = 20f, constrainCrop = true
         )
         val out = Pipeline.render(src, p)
         assertTrue(out.pixels.all { (it ushr 24) == 255 })
@@ -81,6 +84,26 @@ class EngineTest {
     @Test fun curveIsMonotone() {
         val lut = Curves.buildLut(ToneCurve(listOf(CurvePoint(0f, 0f), CurvePoint(0.2f, 0.6f), CurvePoint(0.4f, 0.62f), CurvePoint(1f, 1f))))
         assertTrue((1 until lut.size).all { lut[it] >= lut[it - 1] - 1e-6f })
+    }
+
+    @Test fun maskCombination() {
+        val flat = Img(200, 100, IntArray(200 * 100) { (0xFF shl 24) or 0x808080 })
+        val lin = MaskComponent(1, ComponentType.LINEAR, x1 = 0f, y1 = 0.5f, x2 = 1f, y2 = 0.5f)
+        val rad = MaskComponent(2, ComponentType.RADIAL, CombineMode.SUBTRACT, cx = 0.1f, cy = 0.5f, rx = 0.05f, ry = 0.1f, feather = 10f)
+        val ov = Pipeline.maskOverlay(flat, EditParams(), Mask(9, "m", listOf(lin, rad), adjust = LocalAdjust(exposure = 1f)), 200, 100, 200, 100, false, emptyMap(), Pipeline.OverlayMode.BW)
+        assertTrue((ov[50 * 200 + 20] and 255) < 20)
+        assertTrue((ov[50 * 200 + 60] and 255) > 100)
+    }
+
+    @Test fun uprightLevelsTiltedGrid() {
+        val w = 600
+        val h = 400
+        val px = IntArray(w * h) { i -> val x = i % w; val y = i / w; if (x % 60 < 3 || y % 50 < 3) (0xFF shl 24) or 0x141414 else (0xFF shl 24) or 0xEBEBEB }
+        val tilted = Pipeline.render(Img(w, h, px), EditParams(straighten = 4f))
+        val r = Upright.analyze(tilted)
+        val (a, _, _) = Upright.valuesFor("Livello", r)
+        val fixed = Upright.analyze(Pipeline.render(tilted, EditParams(uprightAngle = a)))
+        assertTrue(abs(fixed.angle) < 0.6f)
     }
 
     @Test fun aspectSquare() {

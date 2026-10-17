@@ -115,14 +115,25 @@ object Analysis {
             i += step
         }
         if (count < 50) return base
-        val mr = (sr / count).toFloat().coerceAtLeast(1e-4f)
-        val mg = (sg / count).toFloat().coerceAtLeast(1e-4f)
-        val mb = (sb / count).toFloat().coerceAtLeast(1e-4f)
-        val t = (ln(mb / mr) / 0.84f) * 0.8f
-        val rM = kotlin.math.exp(0.42f * t)
-        val bM = kotlin.math.exp(-0.42f * t)
+        return wbFor((sr / count).toFloat(), (sg / count).toFloat(), (sb / count).toFloat(), base, 0.8f)
+    }
+
+    /**
+     * Contagocce del bilanciamento del bianco: rende neutro il colore campionato
+     * (r, g, b in 0..1, valori dell'immagine originale).
+     */
+    fun whiteBalanceFromSample(r: Float, g: Float, b: Float, base: EditParams): EditParams =
+        wbFor(Pipeline.srgbToLinear(r), Pipeline.srgbToLinear(g), Pipeline.srgbToLinear(b), base, 1f)
+
+    private fun wbFor(lr: Float, lg: Float, lb: Float, base: EditParams, strength: Float): EditParams {
+        val mr = lr.coerceAtLeast(1e-4f)
+        val mg = lg.coerceAtLeast(1e-4f)
+        val mb = lb.coerceAtLeast(1e-4f)
+        val t = ((ln(mb / mr) / (2f * Pipeline.WB_GAIN)) * strength).coerceIn(-1f, 1f)
+        val rM = kotlin.math.exp(Pipeline.WB_GAIN * t)
+        val bM = kotlin.math.exp(-Pipeline.WB_GAIN * t)
         val q = (mr * rM + mb * bM) / 2f
-        val tn = (-ln(q / mg) / 0.3f) * 0.8f
+        val tn = (-ln(q / mg) / 0.3f) * strength
         return base.copy(
             temperature = (t * 100f).coerceIn(-100f, 100f).roundTo(),
             tint = (tn * 100f).coerceIn(-100f, 100f).roundTo()

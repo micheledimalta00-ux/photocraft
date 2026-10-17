@@ -76,14 +76,20 @@ object Curves {
         val base = buildLut(p.curveMaster)
         val adj = floatArrayOf(p.parShadows, p.parDarks, p.parLights, p.parHighlights)
         if (adj.all { it == 0f }) return base
-        val centers = floatArrayOf(0.125f, 0.375f, 0.625f, 0.875f)
+        val s1 = (p.parSplitShadows / 100f).coerceIn(0.05f, 0.9f)
+        val s2 = (p.parSplitMidtones / 100f).coerceIn(s1 + 0.02f, 0.95f)
+        val s3 = (p.parSplitHighlights / 100f).coerceIn(s2 + 0.02f, 0.98f)
+        val lo = floatArrayOf(0f, s1, s2, s3)
+        val hi = floatArrayOf(s1, s2, s3, 1f)
         val out = FloatArray(LUT_SIZE)
         var prev = 0f
         for (i in 0 until LUT_SIZE) {
             val x = i / (LUT_SIZE - 1f)
             var y = x
             for (k in 0 until 4) {
-                val t = (x - centers[k]) / 0.25f
+                val c = (lo[k] + hi[k]) / 2f
+                val half = max(0.04f, hi[k] - lo[k])
+                val t = (x - c) / half
                 val bump = max(0f, 1f - t * t)
                 y += adj[k] / 100f * 0.16f * bump * bump
             }

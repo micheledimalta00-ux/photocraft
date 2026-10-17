@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
+import com.michele.luce.engine.AiRaster
 import com.michele.luce.engine.EditParams
 import com.michele.luce.engine.Pipeline
 import com.michele.luce.engine.RenderOptions
@@ -37,13 +38,13 @@ object Exporter {
     /** Lato lungo massimo esportabile in sicurezza sulla memoria di un telefono. */
     const val MAX_EXPORT = 4096
 
-    fun render(context: Context, source: Uri, params: EditParams, settings: ExportSettings, cancel: () -> Boolean): Bitmap {
+    fun render(context: Context, source: Uri, params: EditParams, settings: ExportSettings, rasters: Map<String, AiRaster>, cancel: () -> Boolean): Bitmap {
         val orig = BitmapIO.originalSize(context, source)
         val origLong = orig?.let { max(it.first, it.second) } ?: MAX_EXPORT
         val target = min(min(settings.longEdge, MAX_EXPORT), origLong)
         val loaded = BitmapIO.load(context, source, target)
         val scale = max(loaded.img.width, loaded.img.height).toFloat() / max(1, loaded.originalLongEdge)
-        val out = Pipeline.render(loaded.img, params, RenderOptions(resolutionScale = scale, cancel = cancel))
+        val out = Pipeline.render(loaded.img, params, RenderOptions(resolutionScale = scale, cancel = cancel, aiRasters = rasters))
         return BitmapIO.toBitmap(out)
     }
 

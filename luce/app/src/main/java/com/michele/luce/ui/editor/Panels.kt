@@ -24,24 +24,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Brush
-import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Colorize
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Flip
-import androidx.compose.material.icons.filled.Gradient
-import androidx.compose.material.icons.filled.InvertColors
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Rotate90DegreesCw
 import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -60,17 +56,16 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.michele.luce.engine.EditParams
+import com.michele.luce.engine.Geometry
 import com.michele.luce.engine.GradeWheel
-import com.michele.luce.engine.LocalAdjust
-import com.michele.luce.engine.Mask
-import com.michele.luce.engine.MaskType
+import com.michele.luce.engine.PointColor
 import com.michele.luce.engine.Preset
 import com.michele.luce.engine.Presets
 import com.michele.luce.engine.Profiles
 import com.michele.luce.engine.ToneCurve
 import com.michele.luce.engine.Treatment
+import com.michele.luce.engine.Upright
 import com.michele.luce.engine.with
-import com.michele.luce.engine.Geometry
 import com.michele.luce.ui.components.ActionButton
 import com.michele.luce.ui.components.ColorWheel
 import com.michele.luce.ui.components.Gradients
@@ -83,7 +78,7 @@ import com.michele.luce.ui.theme.LuceColors
 
 /** Cursore collegato a un campo di EditParams. */
 @Composable
-private fun PSlider(
+internal fun PSlider(
     vm: EditorViewModel,
     label: String,
     value: Float,
@@ -104,12 +99,35 @@ private fun PSlider(
 }
 
 @Composable
+internal fun Hint(text: String) {
+    Text(
+        text, style = MaterialTheme.typography.bodySmall, color = LuceColors.TextSecondary,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+    )
+}
+
+@Composable
+internal fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(horizontal = 16.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = LuceColors.TextPrimary, modifier = Modifier.weight(1f))
+        Switch(
+            checked = checked, onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(checkedTrackColor = LuceColors.Accent)
+        )
+    }
+}
+
+@Composable
 fun ToolPanel(vm: EditorViewModel, modifier: Modifier = Modifier) {
     Column(modifier) {
         when (vm.tool) {
             Tool.PRESETS -> PresetsPanel(vm)
             Tool.PROFILE -> ProfilePanel(vm)
             Tool.CROP -> CropPanel(vm)
+            Tool.GEOMETRY -> GeometryPanel(vm)
             Tool.MASKS -> MasksPanel(vm)
             Tool.LIGHT -> LightPanel(vm)
             Tool.COLOR -> ColorPanel(vm)
@@ -129,7 +147,10 @@ private enum class CurveChannel(val label: String) { RGB("RGB"), RED("Rosso"), G
 fun LightPanel(vm: EditorViewModel) {
     val p = vm.params
     SectionHeader("Luce") {
-        Pill("Auto", false, { vm.autoTone() }, icon = Icons.Filled.AutoAwesome)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Pill("Ritaglio", vm.showClipping, { vm.toggleClipping() }, icon = Icons.Filled.WarningAmber)
+            Pill("Auto", false, { vm.autoTone() }, icon = Icons.Filled.AutoAwesome)
+        }
     }
     PSlider(vm, "Esposizione", p.exposure, -5f..5f, decimals = 2) { e, v -> e.copy(exposure = v) }
     PSlider(vm, "Contrasto", p.contrast, -100f..100f) { e, v -> e.copy(contrast = v) }
@@ -137,13 +158,15 @@ fun LightPanel(vm: EditorViewModel) {
     PSlider(vm, "Ombre", p.shadows, -100f..100f) { e, v -> e.copy(shadows = v) }
     PSlider(vm, "Bianchi", p.whites, -100f..100f) { e, v -> e.copy(whites = v) }
     PSlider(vm, "Neri", p.blacks, -100f..100f) { e, v -> e.copy(blacks = v) }
+    if (vm.showClipping) Hint("Rosso: luci bruciate · Blu: ombre chiuse")
 
     var channel by rememberSaveable { mutableStateOf(CurveChannel.RGB) }
     SectionHeader("Curva") {
         Pill("Ripristina", false, {
             vm.set(vm.params.copy(
                 curveMaster = ToneCurve(), curveRed = ToneCurve(), curveGreen = ToneCurve(), curveBlue = ToneCurve(),
-                parHighlights = 0f, parLights = 0f, parDarks = 0f, parShadows = 0f
+                parHighlights = 0f, parLights = 0f, parDarks = 0f, parShadows = 0f,
+                parSplitShadows = 25f, parSplitMidtones = 50f, parSplitHighlights = 75f
             ))
         })
     }
@@ -153,6 +176,10 @@ fun LightPanel(vm: EditorViewModel) {
         PSlider(vm, "Chiari", p.parLights, -100f..100f) { e, v -> e.copy(parLights = v) }
         PSlider(vm, "Scuri", p.parDarks, -100f..100f) { e, v -> e.copy(parDarks = v) }
         PSlider(vm, "Ombre", p.parShadows, -100f..100f) { e, v -> e.copy(parShadows = v) }
+        SectionHeader("Divisione delle regioni")
+        PSlider(vm, "Ombre / Scuri", p.parSplitShadows, 10f..(p.parSplitMidtones - 5f).coerceAtLeast(11f), default = 25f) { e, v -> e.copy(parSplitShadows = v) }
+        PSlider(vm, "Scuri / Chiari", p.parSplitMidtones, (p.parSplitShadows + 5f)..(p.parSplitHighlights - 5f).coerceAtLeast(p.parSplitShadows + 6f), default = 50f) { e, v -> e.copy(parSplitMidtones = v) }
+        PSlider(vm, "Chiari / Luci", p.parSplitHighlights, (p.parSplitMidtones + 5f).coerceAtMost(89f)..90f, default = 75f) { e, v -> e.copy(parSplitHighlights = v) }
     } else {
         val curve = when (channel) {
             CurveChannel.RED -> p.curveRed
@@ -190,17 +217,15 @@ fun LightPanel(vm: EditorViewModel) {
                 modifier = Modifier.widthIn(max = 360.dp)
             )
         }
-        Text(
-            "Tocca e trascina per aggiungere punti · doppio tocco su un punto per eliminarlo",
-            style = MaterialTheme.typography.bodySmall, color = LuceColors.TextSecondary,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
+        Hint("Tocca e trascina per aggiungere punti · doppio tocco su un punto per eliminarlo")
     }
 }
 
 // ---------------- Colore ----------------
 
-private enum class ColorTab(val label: String) { BASE("Base"), MIXER("Miscelazione"), GRADING("Color grading") }
+private enum class ColorTab(val label: String) {
+    BASE("Base"), POINT("Colore puntuale"), MIXER("Miscelazione"), GRADING("Color grading"), CALIBRATION("Calibrazione")
+}
 private enum class GradeRange(val label: String) { SHADOWS("Ombre"), MIDTONES("Mezzitoni"), HIGHLIGHTS("Luci"), GLOBAL("Globale") }
 
 private val bandColors = listOf(
@@ -212,7 +237,7 @@ private val bandColors = listOf(
 fun ColorPanel(vm: EditorViewModel) {
     val p = vm.params
     var tab by rememberSaveable { mutableStateOf(ColorTab.BASE) }
-    PillRow(ColorTab.entries, tab, { it.label }, { tab = it }, Modifier.padding(top = 6.dp))
+    PillRow(ColorTab.entries, tab, { it.label }, { tab = it; vm.cancelPick() }, Modifier.padding(top = 6.dp))
     val bw = p.treatment == Treatment.BW || Profiles.byName(p.profile).bw
     when (tab) {
         ColorTab.BASE -> {
@@ -225,10 +250,18 @@ fun ColorPanel(vm: EditorViewModel) {
                 Pill("Bianco e nero", bw, { vm.set(vm.params.copy(treatment = Treatment.BW)) })
             }
             SectionHeader("Bilanciamento del bianco") {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Pill("Auto", false, { vm.autoWhiteBalance() })
-                    Pill("Come scattato", false, { vm.set(vm.params.copy(temperature = 0f, tint = 0f)) })
+                IconButton(onClick = { vm.startPick(PickMode.WHITE_BALANCE) }) {
+                    Icon(
+                        Icons.Filled.Colorize, "Contagocce del bilanciamento del bianco",
+                        tint = if (vm.pickMode == PickMode.WHITE_BALANCE) LuceColors.Accent else LuceColors.TextPrimary
+                    )
                 }
+            }
+            val asShot = p.temperature == 0f && p.tint == 0f
+            Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Pill("Come scattato", asShot, { vm.set(vm.params.copy(temperature = 0f, tint = 0f)) })
+                Pill("Auto", false, { vm.autoWhiteBalance() })
+                Pill("Personalizzato", !asShot, { })
             }
             PSlider(vm, "Temperatura", p.temperature, -100f..100f, gradient = Gradients.Temperature) { e, v -> e.copy(temperature = v) }
             PSlider(vm, "Tinta", p.tint, -100f..100f, gradient = Gradients.Tint) { e, v -> e.copy(tint = v) }
@@ -236,6 +269,7 @@ fun ColorPanel(vm: EditorViewModel) {
             PSlider(vm, "Vividezza", p.vibrance, -100f..100f, enabled = !bw) { e, v -> e.copy(vibrance = v) }
             PSlider(vm, "Saturazione", p.saturation, -100f..100f, enabled = !bw) { e, v -> e.copy(saturation = v) }
         }
+        ColorTab.POINT -> PointColorPanel(vm, bw)
         ColorTab.MIXER -> {
             var band by rememberSaveable { mutableIntStateOf(0) }
             SectionHeader(if (bw) "Miscela bianco e nero" else "Miscelazione colori") {
@@ -273,51 +307,140 @@ fun ColorPanel(vm: EditorViewModel) {
             }
             PSlider(vm, if (bw) "Luminosità nel B&N" else "Luminanza", p.hslLum[band], -100f..100f, gradient = Gradients.lum(center)) { e, v -> e.copy(hslLum = e.hslLum.with(band, v)) }
         }
-        ColorTab.GRADING -> {
-            var range by rememberSaveable { mutableStateOf(GradeRange.MIDTONES) }
-            SectionHeader("Color grading") {
+        ColorTab.GRADING -> GradingPanel(vm)
+        ColorTab.CALIBRATION -> {
+            SectionHeader("Calibrazione") {
                 Pill("Ripristina", false, {
-                    vm.set(vm.params.copy(
-                        gradeShadows = GradeWheel(), gradeMidtones = GradeWheel(), gradeHighlights = GradeWheel(),
-                        gradeGlobal = GradeWheel(), gradeBlending = 50f, gradeBalance = 0f
-                    ))
+                    vm.set(vm.params.copy(calShadowsTint = 0f, calRedHue = 0f, calRedSat = 0f, calGreenHue = 0f, calGreenSat = 0f, calBlueHue = 0f, calBlueSat = 0f))
                 })
             }
-            PillRow(GradeRange.entries, range, { it.label }, { range = it })
-            val wheel = when (range) {
-                GradeRange.SHADOWS -> p.gradeShadows
-                GradeRange.MIDTONES -> p.gradeMidtones
-                GradeRange.HIGHLIGHTS -> p.gradeHighlights
-                GradeRange.GLOBAL -> p.gradeGlobal
-            }
-            fun withWheel(e: EditParams, w: GradeWheel) = when (range) {
-                GradeRange.SHADOWS -> e.copy(gradeShadows = w)
-                GradeRange.MIDTONES -> e.copy(gradeMidtones = w)
-                GradeRange.HIGHLIGHTS -> e.copy(gradeHighlights = w)
-                GradeRange.GLOBAL -> e.copy(gradeGlobal = w)
-            }
-            fun currentWheel(e: EditParams) = when (range) {
-                GradeRange.SHADOWS -> e.gradeShadows
-                GradeRange.MIDTONES -> e.gradeMidtones
-                GradeRange.HIGHLIGHTS -> e.gradeHighlights
-                GradeRange.GLOBAL -> e.gradeGlobal
-            }
-            Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                ColorWheel(
-                    wheel = wheel,
-                    onChange = { w -> vm.update(withWheel(vm.params, w)) },
-                    onCommit = { vm.commit() },
-                    modifier = Modifier.size(190.dp)
-                )
-            }
-            PSlider(vm, "Tonalità", wheel.hue, 0f..360f, default = 0f, gradient = Gradients.Spectrum) { e, v -> withWheel(e, currentWheel(e).copy(hue = v)) }
-            PSlider(vm, "Saturazione", wheel.sat, 0f..100f) { e, v -> withWheel(e, currentWheel(e).copy(sat = v)) }
-            PSlider(vm, "Luminanza", wheel.lum, -100f..100f) { e, v -> withWheel(e, currentWheel(e).copy(lum = v)) }
-            SectionHeader("Regolazioni")
-            PSlider(vm, "Fusione", p.gradeBlending, 0f..100f, default = 50f) { e, v -> e.copy(gradeBlending = v) }
-            PSlider(vm, "Bilanciamento", p.gradeBalance, -100f..100f) { e, v -> e.copy(gradeBalance = v) }
+            PSlider(vm, "Tinta ombre", p.calShadowsTint, -100f..100f, gradient = Gradients.Tint) { e, v -> e.copy(calShadowsTint = v) }
+            SectionHeader("Primario rosso")
+            PSlider(vm, "Tonalità", p.calRedHue, -100f..100f, gradient = listOf(Color(0xFFE0207A), Color(0xFFE53935), Color(0xFFFB8C00))) { e, v -> e.copy(calRedHue = v) }
+            PSlider(vm, "Saturazione", p.calRedSat, -100f..100f, gradient = Gradients.sat(0f)) { e, v -> e.copy(calRedSat = v) }
+            SectionHeader("Primario verde")
+            PSlider(vm, "Tonalità", p.calGreenHue, -100f..100f, gradient = listOf(Color(0xFFC0CA33), Color(0xFF43A047), Color(0xFF00ACC1))) { e, v -> e.copy(calGreenHue = v) }
+            PSlider(vm, "Saturazione", p.calGreenSat, -100f..100f, gradient = Gradients.sat(120f)) { e, v -> e.copy(calGreenSat = v) }
+            SectionHeader("Primario blu")
+            PSlider(vm, "Tonalità", p.calBlueHue, -100f..100f, gradient = listOf(Color(0xFF00ACC1), Color(0xFF1E88E5), Color(0xFF8E24AA))) { e, v -> e.copy(calBlueHue = v) }
+            PSlider(vm, "Saturazione", p.calBlueSat, -100f..100f, gradient = Gradients.sat(240f)) { e, v -> e.copy(calBlueSat = v) }
         }
     }
+}
+
+@Composable
+private fun GradingPanel(vm: EditorViewModel) {
+    val p = vm.params
+    var range by rememberSaveable { mutableStateOf(GradeRange.MIDTONES) }
+    SectionHeader("Color grading") {
+        Pill("Ripristina", false, {
+            vm.set(vm.params.copy(
+                gradeShadows = GradeWheel(), gradeMidtones = GradeWheel(), gradeHighlights = GradeWheel(),
+                gradeGlobal = GradeWheel(), gradeBlending = 50f, gradeBalance = 0f
+            ))
+        })
+    }
+    PillRow(GradeRange.entries, range, { it.label }, { range = it })
+    val wheel = when (range) {
+        GradeRange.SHADOWS -> p.gradeShadows
+        GradeRange.MIDTONES -> p.gradeMidtones
+        GradeRange.HIGHLIGHTS -> p.gradeHighlights
+        GradeRange.GLOBAL -> p.gradeGlobal
+    }
+    fun withWheel(e: EditParams, w: GradeWheel) = when (range) {
+        GradeRange.SHADOWS -> e.copy(gradeShadows = w)
+        GradeRange.MIDTONES -> e.copy(gradeMidtones = w)
+        GradeRange.HIGHLIGHTS -> e.copy(gradeHighlights = w)
+        GradeRange.GLOBAL -> e.copy(gradeGlobal = w)
+    }
+    fun currentWheel(e: EditParams) = when (range) {
+        GradeRange.SHADOWS -> e.gradeShadows
+        GradeRange.MIDTONES -> e.gradeMidtones
+        GradeRange.HIGHLIGHTS -> e.gradeHighlights
+        GradeRange.GLOBAL -> e.gradeGlobal
+    }
+    Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+        ColorWheel(
+            wheel = wheel,
+            onChange = { w -> vm.update(withWheel(vm.params, w)) },
+            onCommit = { vm.commit() },
+            modifier = Modifier.size(190.dp)
+        )
+    }
+    PSlider(vm, "Tonalità", wheel.hue, 0f..360f, default = 0f, gradient = Gradients.Spectrum) { e, v -> withWheel(e, currentWheel(e).copy(hue = v)) }
+    PSlider(vm, "Saturazione", wheel.sat, 0f..100f) { e, v -> withWheel(e, currentWheel(e).copy(sat = v)) }
+    PSlider(vm, "Luminanza", wheel.lum, -100f..100f) { e, v -> withWheel(e, currentWheel(e).copy(lum = v)) }
+    SectionHeader("Regolazioni")
+    PSlider(vm, "Fusione", p.gradeBlending, 0f..100f, default = 50f) { e, v -> e.copy(gradeBlending = v) }
+    PSlider(vm, "Bilanciamento", p.gradeBalance, -100f..100f) { e, v -> e.copy(gradeBalance = v) }
+}
+
+@Composable
+private fun PointColorPanel(vm: EditorViewModel, bw: Boolean) {
+    val p = vm.params
+    SectionHeader("Colore puntuale") {
+        IconButton(onClick = { vm.startPick(PickMode.POINT_COLOR) }, enabled = !bw) {
+            Icon(
+                Icons.Filled.Colorize, "Campiona un colore",
+                tint = when {
+                    bw -> LuceColors.TextDisabled
+                    vm.pickMode == PickMode.POINT_COLOR -> LuceColors.Accent
+                    else -> LuceColors.TextPrimary
+                }
+            )
+        }
+    }
+    if (bw) {
+        Hint("Il colore puntuale non è disponibile in bianco e nero.")
+        return
+    }
+    if (p.pointColors.isEmpty()) {
+        Hint("Tocca il contagocce, poi tocca un colore della foto per modificarne con precisione tonalità, saturazione e luminanza.")
+        return
+    }
+    // campioni
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        p.pointColors.forEach { pc ->
+            val sel = pc.id == vm.selectedPointColorId
+            Box(
+                Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(Color.hsl(pc.hue % 360f, pc.sat.coerceIn(0f, 1f), pc.lum.coerceIn(0.05f, 0.95f)))
+                    .border(if (sel) 2.5.dp else 1.dp, if (sel) Color.White else Color(0x55FFFFFF), CircleShape)
+                    .clickable { vm.selectedPointColorId = pc.id }
+            )
+        }
+    }
+    val pc = vm.selectedPointColor() ?: return
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Pill("Visualizza intervallo", vm.pointColorViewId == pc.id, { vm.togglePointColorView() }, icon = Icons.Filled.Visibility)
+        Pill("Elimina", false, { vm.deletePointColor(pc.id) }, icon = Icons.Filled.Delete)
+    }
+    PcSlider(vm, "Spostamento tonalità", pc.hueShift, -100f..100f, gradient = listOf(Color.hsv((pc.hue + 300f) % 360f, 0.8f, 0.9f), Color.hsv(pc.hue % 360f, 0.8f, 0.9f), Color.hsv((pc.hue + 60f) % 360f, 0.8f, 0.9f))) { c, v -> c.copy(hueShift = v) }
+    PcSlider(vm, "Spostamento saturazione", pc.satShift, -100f..100f, gradient = Gradients.sat(pc.hue)) { c, v -> c.copy(satShift = v) }
+    PcSlider(vm, "Spostamento luminanza", pc.lumShift, -100f..100f, gradient = Gradients.lum(pc.hue)) { c, v -> c.copy(lumShift = v) }
+    PcSlider(vm, "Varianza", pc.variance, -100f..100f) { c, v -> c.copy(variance = v) }
+    SectionHeader("Intervallo")
+    PcSlider(vm, "Intervallo", pc.range, 0f..100f, default = 50f) { c, v -> c.copy(range = v) }
+    PcSlider(vm, "Intervallo tonalità", pc.hueRange, 0f..100f, default = 50f) { c, v -> c.copy(hueRange = v) }
+    PcSlider(vm, "Intervallo saturazione", pc.satRange, 0f..100f, default = 50f) { c, v -> c.copy(satRange = v) }
+    PcSlider(vm, "Intervallo luminanza", pc.lumRange, 0f..100f, default = 50f) { c, v -> c.copy(lumRange = v) }
+}
+
+@Composable
+private fun PcSlider(
+    vm: EditorViewModel, label: String, value: Float, range: ClosedFloatingPointRange<Float>,
+    default: Float = 0f, gradient: List<Color>? = null, f: (PointColor, Float) -> PointColor
+) {
+    LuceSlider(
+        label, value, range,
+        onChange = { v -> vm.selectedPointColor()?.let { vm.updatePointColor(f(it, v), live = true) } },
+        onCommit = { vm.commit() }, default = default, gradient = gradient
+    )
 }
 
 // ---------------- Effetti ----------------
@@ -330,12 +453,13 @@ fun EffectsPanel(vm: EditorViewModel) {
     PSlider(vm, "Chiarezza", p.clarity, -100f..100f) { e, v -> e.copy(clarity = v) }
     PSlider(vm, "Rimozione foschia", p.dehaze, -100f..100f) { e, v -> e.copy(dehaze = v) }
     SectionHeader("Vignettatura")
+    PillRow(listOf(0, 1, 2), p.vignetteStyle, { listOf("Priorità luci", "Priorità colore", "Sovrapposizione pittura")[it] }, { vm.set(vm.params.copy(vignetteStyle = it)) })
     PSlider(vm, "Fattore", p.vignetteAmount, -100f..100f) { e, v -> e.copy(vignetteAmount = v) }
     val vOn = p.vignetteAmount != 0f
     PSlider(vm, "Punto medio", p.vignetteMidpoint, 0f..100f, default = 50f, enabled = vOn) { e, v -> e.copy(vignetteMidpoint = v) }
     PSlider(vm, "Arrotondamento", p.vignetteRoundness, -100f..100f, enabled = vOn) { e, v -> e.copy(vignetteRoundness = v) }
     PSlider(vm, "Sfumatura", p.vignetteFeather, 0f..100f, default = 50f, enabled = vOn) { e, v -> e.copy(vignetteFeather = v) }
-    PSlider(vm, "Luci", p.vignetteHighlights, 0f..100f, enabled = vOn && p.vignetteAmount < 0f) { e, v -> e.copy(vignetteHighlights = v) }
+    PSlider(vm, "Luci", p.vignetteHighlights, 0f..100f, enabled = vOn && p.vignetteAmount < 0f && p.vignetteStyle != 2) { e, v -> e.copy(vignetteHighlights = v) }
     SectionHeader("Granulosità")
     PSlider(vm, "Fattore", p.grainAmount, 0f..100f) { e, v -> e.copy(grainAmount = v) }
     val gOn = p.grainAmount > 0f
@@ -357,13 +481,11 @@ fun DetailPanel(vm: EditorViewModel) {
     SectionHeader("Riduzione disturbo")
     PSlider(vm, "Luminanza", p.nrLuminance, 0f..100f) { e, v -> e.copy(nrLuminance = v) }
     PSlider(vm, "Dettaglio", p.nrLumDetail, 0f..100f, default = 50f, enabled = p.nrLuminance > 0f) { e, v -> e.copy(nrLumDetail = v) }
+    PSlider(vm, "Contrasto", p.nrLumContrast, 0f..100f, enabled = p.nrLuminance > 0f) { e, v -> e.copy(nrLumContrast = v) }
     PSlider(vm, "Colore", p.nrColor, 0f..100f) { e, v -> e.copy(nrColor = v) }
     PSlider(vm, "Dettaglio colore", p.nrColorDetail, 0f..100f, default = 50f, enabled = p.nrColor > 0f) { e, v -> e.copy(nrColorDetail = v) }
-    Text(
-        "Suggerimento: ingrandisci con due dita per valutare nitidezza e disturbo.",
-        style = MaterialTheme.typography.bodySmall, color = LuceColors.TextSecondary,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-    )
+    PSlider(vm, "Uniformità", p.nrColorSmooth, 0f..100f, default = 50f, enabled = p.nrColor > 0f) { e, v -> e.copy(nrColorSmooth = v) }
+    Hint("Suggerimento: ingrandisci con due dita per valutare nitidezza e disturbo.")
 }
 
 // ---------------- Ottica ----------------
@@ -372,14 +494,45 @@ fun DetailPanel(vm: EditorViewModel) {
 fun OpticsPanel(vm: EditorViewModel) {
     val p = vm.params
     SectionHeader("Correzioni obiettivo")
+    ToggleRow("Rimuovi aberrazione cromatica", p.removeCA) { vm.set(vm.params.copy(removeCA = it)) }
     PSlider(vm, "Distorsione", p.lensDistortion, -100f..100f) { e, v -> e.copy(lensDistortion = v) }
     PSlider(vm, "Vignettatura", p.lensVignette, -100f..100f) { e, v -> e.copy(lensVignette = v) }
     PSlider(vm, "Aberrazione cromatica", p.chromaticAberration, -100f..100f) { e, v -> e.copy(chromaticAberration = v) }
-    Text(
-        "Distorsione positiva corregge l'effetto barilotto, negativa il cuscinetto. L'aberrazione cromatica sposta i canali rosso e blu ai bordi.",
-        style = MaterialTheme.typography.bodySmall, color = LuceColors.TextSecondary,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-    )
+    SectionHeader("Rimuovi frange") {
+        Pill("Ripristina", false, {
+            vm.set(vm.params.copy(defringePurple = 0f, defringePurpleHueLo = 30f, defringePurpleHueHi = 70f, defringeGreen = 0f, defringeGreenHueLo = 40f, defringeGreenHueHi = 60f))
+        })
+    }
+    val purple = listOf(Color(0xFF6A5BFF), Color(0xFFB040FF), Color(0xFFFF40C0))
+    val green = listOf(Color(0xFFD0E040), Color(0xFF40D060), Color(0xFF40C0C0))
+    PSlider(vm, "Fattore viola", p.defringePurple, 0f..20f) { e, v -> e.copy(defringePurple = v) }
+    PSlider(vm, "Tonalità viola (min)", p.defringePurpleHueLo, 0f..(p.defringePurpleHueHi - 10f).coerceAtLeast(1f), default = 30f, gradient = purple, enabled = p.defringePurple > 0f) { e, v -> e.copy(defringePurpleHueLo = v) }
+    PSlider(vm, "Tonalità viola (max)", p.defringePurpleHueHi, (p.defringePurpleHueLo + 10f).coerceAtMost(99f)..100f, default = 70f, gradient = purple, enabled = p.defringePurple > 0f) { e, v -> e.copy(defringePurpleHueHi = v) }
+    PSlider(vm, "Fattore verde", p.defringeGreen, 0f..20f) { e, v -> e.copy(defringeGreen = v) }
+    PSlider(vm, "Tonalità verde (min)", p.defringeGreenHueLo, 0f..(p.defringeGreenHueHi - 10f).coerceAtLeast(1f), default = 40f, gradient = green, enabled = p.defringeGreen > 0f) { e, v -> e.copy(defringeGreenHueLo = v) }
+    PSlider(vm, "Tonalità verde (max)", p.defringeGreenHueHi, (p.defringeGreenHueLo + 10f).coerceAtMost(99f)..100f, default = 60f, gradient = green, enabled = p.defringeGreen > 0f) { e, v -> e.copy(defringeGreenHueHi = v) }
+    Hint("Distorsione positiva corregge l'effetto barilotto, negativa il cuscinetto. Le frange vengono desaturate solo lungo i bordi ad alto contrasto.")
+}
+
+// ---------------- Geometria ----------------
+
+@Composable
+fun GeometryPanel(vm: EditorViewModel) {
+    val p = vm.params
+    SectionHeader("Upright") {
+        Pill("Ripristina", false, { vm.resetTransform() }, icon = Icons.Filled.RestartAlt)
+    }
+    PillRow(Upright.MODES, p.uprightMode, { if (it == "Off") "Disattivato" else it }, { vm.setUpright(it) })
+    Hint("Auto bilancia livello e prospettiva · Livello raddrizza l'orizzonte · Verticale corregge le linee che convergono · Completo applica tutte le correzioni.")
+    ToggleRow("Vincola ritaglio", p.constrainCrop) { vm.set(vm.params.copy(constrainCrop = it)) }
+    SectionHeader("Trasformazione manuale")
+    PSlider(vm, "Verticale", p.tVertical, -100f..100f) { e, v -> e.copy(tVertical = v) }
+    PSlider(vm, "Orizzontale", p.tHorizontal, -100f..100f) { e, v -> e.copy(tHorizontal = v) }
+    PSlider(vm, "Ruota", p.tRotate, -10f..10f, decimals = 1, suffix = "°") { e, v -> e.copy(tRotate = v) }
+    PSlider(vm, "Aspetto", p.tAspect, -100f..100f) { e, v -> e.copy(tAspect = v) }
+    PSlider(vm, "Scala", p.tScale, 50f..150f, default = 100f) { e, v -> e.copy(tScale = v) }
+    PSlider(vm, "Spostamento X", p.tOffsetX, -100f..100f) { e, v -> e.copy(tOffsetX = v) }
+    PSlider(vm, "Spostamento Y", p.tOffsetY, -100f..100f) { e, v -> e.copy(tOffsetY = v) }
 }
 
 // ---------------- Ritaglia ----------------
@@ -400,11 +553,7 @@ fun CropPanel(vm: EditorViewModel) {
     }
     SectionHeader("Raddrizza")
     PSlider(vm, "Angolo", p.straighten, -45f..45f, decimals = 1, suffix = "°") { e, v -> e.copy(straighten = v) }
-    Text(
-        "Trascina gli angoli o i bordi del riquadro. Trascina all'interno per spostarlo.",
-        style = MaterialTheme.typography.bodySmall, color = LuceColors.TextSecondary,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-    )
+    Hint("Trascina gli angoli o i bordi del riquadro. Trascina all'interno per spostarlo.")
 }
 
 // ---------------- Profili ----------------
@@ -434,7 +583,6 @@ fun ProfilePanel(vm: EditorViewModel) {
 
 // ---------------- Predefiniti ----------------
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PresetsPanel(vm: EditorViewModel) {
     var showCreate by remember { mutableStateOf(false) }
@@ -460,13 +608,7 @@ fun PresetsPanel(vm: EditorViewModel) {
             }
         }
     }
-    if (vm.userPresets.isNotEmpty()) {
-        Text(
-            "Tieni premuto un tuo predefinito per eliminarlo.",
-            style = MaterialTheme.typography.bodySmall, color = LuceColors.TextSecondary,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-        )
-    }
+    if (vm.userPresets.isNotEmpty()) Hint("Tieni premuto un tuo predefinito per eliminarlo.")
 
     if (showCreate) {
         var name by remember { mutableStateOf("") }
@@ -525,146 +667,4 @@ private fun Thumb(title: String, image: ImageBitmap?, selected: Boolean, onClick
             maxLines = 1, overflow = TextOverflow.Ellipsis
         )
     }
-}
-
-// ---------------- Maschere ----------------
-
-@Composable
-fun MasksPanel(vm: EditorViewModel) {
-    val p = vm.params
-    val selected = vm.selectedMask()
-    if (selected == null) {
-        SectionHeader("Maschere")
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            ActionButton("Pennello", Icons.Filled.Brush, { vm.addMask(MaskType.BRUSH) })
-            ActionButton("Lineare", Icons.Filled.Gradient, { vm.addMask(MaskType.LINEAR) })
-            ActionButton("Radiale", Icons.Filled.RadioButtonUnchecked, { vm.addMask(MaskType.RADIAL) })
-        }
-        if (p.masks.isEmpty()) {
-            Text(
-                "Le maschere applicano regolazioni solo a una parte della foto. Scegli un tipo per iniziare.",
-                style = MaterialTheme.typography.bodySmall, color = LuceColors.TextSecondary,
-                modifier = Modifier.padding(16.dp)
-            )
-        }
-        p.masks.forEach { m ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { vm.selectMask(m.id) }
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    when (m.type) { MaskType.BRUSH -> Icons.Filled.Brush; MaskType.LINEAR -> Icons.Filled.Gradient; MaskType.RADIAL -> Icons.Filled.RadioButtonUnchecked },
-                    null, tint = LuceColors.TextSecondary
-                )
-                Text(m.name, color = LuceColors.TextPrimary, modifier = Modifier.weight(1f).padding(horizontal = 12.dp))
-                IconButton(onClick = { vm.updateMask(m.copy(visible = !m.visible), live = false) }) {
-                    Icon(if (m.visible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff, "Visibilità", tint = LuceColors.TextSecondary)
-                }
-            }
-        }
-        return
-    }
-
-    Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { vm.selectMask(null) }) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Tutte le maschere", tint = LuceColors.TextPrimary)
-        }
-        Icon(Icons.Filled.Layers, null, tint = LuceColors.Accent)
-        Text(selected.name, style = MaterialTheme.typography.titleMedium, color = LuceColors.TextPrimary, modifier = Modifier.padding(start = 8.dp).weight(1f))
-    }
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly
-    ) {
-        ActionButton("Inverti", Icons.Filled.InvertColors, { vm.updateMask(selected.copy(invert = !selected.invert), live = false) }, active = selected.invert)
-        ActionButton("Sovrapposiz.", Icons.Filled.Visibility, { vm.toggleOverlay() }, active = vm.showMaskOverlay)
-        ActionButton("Duplica", Icons.Filled.ContentCopy, { vm.duplicateMask(selected.id) })
-        ActionButton("Elimina", Icons.Filled.Delete, { vm.deleteMask(selected.id) })
-    }
-
-    when (selected.type) {
-        MaskType.BRUSH -> {
-            SectionHeader("Pennello") {
-                Pill("Cancella tratti", false, { vm.clearBrush() })
-            }
-            Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Pill("Aggiungi", vm.brush.mode == BrushMode.PAINT, { vm.brush = vm.brush.copy(mode = BrushMode.PAINT) }, icon = Icons.Filled.Brush)
-                Pill("Gomma", vm.brush.mode == BrushMode.ERASE, { vm.brush = vm.brush.copy(mode = BrushMode.ERASE) })
-            }
-            LuceSlider("Dimensione", vm.brush.size * 100f, 1f..30f, { vm.brush = vm.brush.copy(size = it / 100f) }, {}, default = 6f)
-            LuceSlider("Sfumatura", vm.brush.feather * 100f, 0f..100f, { vm.brush = vm.brush.copy(feather = it / 100f) }, {}, default = 60f)
-            LuceSlider("Flusso", vm.brush.flow * 100f, 5f..100f, { vm.brush = vm.brush.copy(flow = it / 100f) }, {}, default = 80f)
-            Text(
-                "Dipingi con un dito sulla foto · usa due dita per ingrandire e spostarti.",
-                style = MaterialTheme.typography.bodySmall, color = LuceColors.TextSecondary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
-        }
-        MaskType.RADIAL -> {
-            SectionHeader("Forma")
-            MaskSlider(vm, selected, "Sfumatura", selected.feather, 0f..100f, 50f) { m, v -> m.copy(feather = v) }
-            MaskSlider(vm, selected, "Angolo", selected.angle, -180f..180f, 0f, suffix = "°") { m, v -> m.copy(angle = v) }
-            Text(
-                "Trascina il centro per spostare, le maniglie per ridimensionare e ruotare.",
-                style = MaterialTheme.typography.bodySmall, color = LuceColors.TextSecondary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
-        }
-        MaskType.LINEAR -> {
-            Text(
-                "La regolazione è piena sulla linea continua e svanisce fino alla linea tratteggiata.",
-                style = MaterialTheme.typography.bodySmall, color = LuceColors.TextSecondary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-        }
-    }
-
-    val a = selected.adjust
-    SectionHeader("Regolazioni locali") {
-        Pill("Ripristina", false, { vm.updateMask(selected.copy(adjust = LocalAdjust()), live = false) })
-    }
-    LocalSlider(vm, selected, "Esposizione", a.exposure, -4f..4f, 2) { l, v -> l.copy(exposure = v) }
-    LocalSlider(vm, selected, "Contrasto", a.contrast, -100f..100f) { l, v -> l.copy(contrast = v) }
-    LocalSlider(vm, selected, "Luci", a.highlights, -100f..100f) { l, v -> l.copy(highlights = v) }
-    LocalSlider(vm, selected, "Ombre", a.shadows, -100f..100f) { l, v -> l.copy(shadows = v) }
-    LocalSlider(vm, selected, "Bianchi", a.whites, -100f..100f) { l, v -> l.copy(whites = v) }
-    LocalSlider(vm, selected, "Neri", a.blacks, -100f..100f) { l, v -> l.copy(blacks = v) }
-    LocalSlider(vm, selected, "Temperatura", a.temperature, -100f..100f, gradient = Gradients.Temperature) { l, v -> l.copy(temperature = v) }
-    LocalSlider(vm, selected, "Tinta", a.tint, -100f..100f, gradient = Gradients.Tint) { l, v -> l.copy(tint = v) }
-    LocalSlider(vm, selected, "Saturazione", a.saturation, -100f..100f) { l, v -> l.copy(saturation = v) }
-    LocalSlider(vm, selected, "Texture", a.texture, -100f..100f) { l, v -> l.copy(texture = v) }
-    LocalSlider(vm, selected, "Chiarezza", a.clarity, -100f..100f) { l, v -> l.copy(clarity = v) }
-    LocalSlider(vm, selected, "Rimozione foschia", a.dehaze, -100f..100f) { l, v -> l.copy(dehaze = v) }
-}
-
-@Composable
-private fun MaskSlider(
-    vm: EditorViewModel, mask: Mask, label: String, value: Float, range: ClosedFloatingPointRange<Float>, default: Float,
-    suffix: String = "", apply: (Mask, Float) -> Mask
-) {
-    LuceSlider(
-        label, value, range,
-        onChange = { v -> vm.selectedMask()?.let { vm.updateMask(apply(it, v), live = true) } },
-        onCommit = { vm.commit() },
-        default = default, suffix = suffix
-    )
-}
-
-@Composable
-private fun LocalSlider(
-    vm: EditorViewModel, mask: Mask, label: String, value: Float, range: ClosedFloatingPointRange<Float>,
-    decimals: Int = 0, gradient: List<Color>? = null, apply: (LocalAdjust, Float) -> LocalAdjust
-) {
-    LuceSlider(
-        label, value, range,
-        onChange = { v -> vm.selectedMask()?.let { m -> vm.updateMask(m.copy(adjust = apply(m.adjust, v)), live = true) } },
-        onCommit = { vm.commit() },
-        decimals = decimals, gradient = gradient
-    )
 }

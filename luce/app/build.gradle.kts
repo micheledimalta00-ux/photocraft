@@ -12,9 +12,13 @@ android {
         applicationId = "com.michele.luce"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "2.0.0"
         vectorDrawables { useSupportLibrary = true }
+        ndk {
+            // MediaPipe: telefoni ARM a 64 e 32 bit ed emulatori x86_64
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     signingConfigs {
@@ -56,6 +60,11 @@ android {
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        jniLibs.useLegacyPackaging = true
+    }
+    androidResources {
+        // i modelli devono restare non compressi per essere mappati in memoria
+        noCompress += listOf("tflite", "task")
     }
 }
 
@@ -74,6 +83,7 @@ dependencies {
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("com.google.mediapipe:tasks-vision:0.10.32")
 
     testImplementation("junit:junit:4.13.2")
 }

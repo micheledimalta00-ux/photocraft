@@ -49,6 +49,14 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Modelli IA per le maschere
+        run: |
+          mkdir -p app/src/main/assets/models
+          for f in deeplab_v3.tflite selfie_multiclass.tflite ade20k.tflite magic_touch.tflite face_landmarker.task; do
+            curl -fsSL --retry 3 -o "app/src/main/assets/models/$f" "https://github.com/${{ github.repository }}/releases/download/luce-models/$f"
+          done
+          ls -la app/src/main/assets/models
+
       - name: Unit tests (motore di elaborazione)
         run: |
           set -o pipefail

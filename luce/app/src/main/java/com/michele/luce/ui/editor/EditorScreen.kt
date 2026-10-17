@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Style
+import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -85,6 +86,7 @@ private fun Tool.icon(): ImageVector = when (this) {
     Tool.PRESETS -> Icons.Filled.Style
     Tool.PROFILE -> Icons.Filled.Filter
     Tool.CROP -> Icons.Filled.Crop
+    Tool.GEOMETRY -> Icons.Filled.Transform
     Tool.MASKS -> Icons.Filled.Layers
     Tool.LIGHT -> Icons.Filled.WbSunny
     Tool.COLOR -> Icons.Filled.Palette
@@ -271,6 +273,7 @@ private fun TopBar(vm: EditorViewModel, onBack: () -> Unit, onExport: () -> Unit
                 Icon(Icons.Filled.MoreVert, "Altro", tint = LuceColors.TextPrimary)
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text(if (vm.showClipping) "Nascondi avviso di ritaglio" else "Mostra avviso di ritaglio") }, onClick = { menu = false; vm.toggleClipping() })
                 DropdownMenuItem(text = { Text("Copia impostazioni") }, onClick = { menu = false; vm.copySettings() })
                 DropdownMenuItem(text = { Text("Incolla impostazioni") }, enabled = vm.hasClipboard(), onClick = { menu = false; vm.pasteSettings() })
                 DropdownMenuItem(text = { Text("Ripristina regolazioni") }, onClick = { menu = false; vm.resetAdjustments() })

@@ -7,7 +7,13 @@ import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -47,8 +53,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.michele.luce.engine.EditParams
 import com.michele.luce.engine.Geometry
-import com.michele.luce.engine.Mask
-import com.michele.luce.engine.MaskType
+import com.michele.luce.engine.ComponentType
+import com.michele.luce.engine.MaskComponent
 import com.michele.luce.ui.components.HistogramView
 import com.michele.luce.ui.theme.LuceColors
 import kotlinx.coroutines.Job
@@ -81,7 +87,7 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
     val params = vm.params
     val cropMode = vm.tool == Tool.CROP && vm.previewUncropped
     val maskMode = vm.tool == Tool.MASKS
-    val selectedMask = vm.selectedMask()
+    val selectedComp = vm.selectedComponent()
 
     // Proporzioni dell'immagine visualizzata: si usano quelle attese dai parametri, così
     // il riquadro non "salta" mentre l'anteprima viene ricalcolata. Le funzioni sotto leggono
@@ -139,6 +145,12 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
         return Offset(r.left + nx * r.width, r.top + ny * r.height)
     }
 
+    /** Coordinate normalizzate dell'immagine mostrata. */
+    fun toShownUv(pos: Offset): Offset {
+        val r = shownRect()
+        return Offset((pos.x - r.left) / max(1f, r.width), (pos.y - r.top) / max(1f, r.height))
+    }
+
     /** Pixel dello schermo per pixel della tela. */
     fun screenPerCanvasPx(): Float {
         val (cw, _) = vm.canvasSize()
@@ -155,7 +167,7 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
     var cropStart by remember { mutableStateOf(floatArrayOf(0f, 0f, 1f, 1f)) }
     var dragStart by remember { mutableStateOf(Offset.Zero) }
     var maskHit by remember { mutableStateOf(MaskHit.NONE) }
-    var maskStart by remember { mutableStateOf<Mask?>(null) }
+    var maskStart by remember { mutableStateOf<MaskComponent?>(null) }
 
     fun cropHitTest(pos: Offset): CropHit {
         val r = shownRect()
@@ -248,10 +260,10 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
         vm.update(np)
     }
 
-    fun maskHitTest(pos: Offset, m: Mask): MaskHit {
+    fun maskHitTest(pos: Offset, m: MaskComponent): MaskHit {
         val (cw, ch) = vm.canvasSize()
         return when (m.type) {
-            MaskType.RADIAL -> {
+            ComponentType.RADIAL -> {
                 val c = fromCanvasUv(m.cx, m.cy)
                 val spp = screenPerCanvasPx()
                 val a = Math.toRadians(m.angle.toDouble())
@@ -266,7 +278,7 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
                     else -> MaskHit.NONE
                 }
             }
-            MaskType.LINEAR -> {
+            ComponentType.LINEAR -> {
                 val p1 = fromCanvasUv(m.x1, m.y1)
                 val p2 = fromCanvasUv(m.x2, m.y2)
                 val mid = (p1 + p2) / 2f
@@ -277,7 +289,8 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
                     else -> MaskHit.NONE
                 }
             }
-            MaskType.BRUSH -> MaskHit.PAINT
+            ComponentType.BRUSH -> MaskHit.PAINT
+            else -> MaskHit.NONE
         }
     }
 
@@ -310,7 +323,7 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
             MaskHit.LINE_CENTER -> m0.copy(x1 = m0.x1 + du, y1 = m0.y1 + dv, x2 = m0.x2 + du, y2 = m0.y2 + dv)
             else -> return
         }
-        vm.updateMask(m, live = true)
+        vm.updateComponent(m, live = true)
     }
 
     val (drawCw, drawCh) = vm.canvasSize()
@@ -337,7 +350,7 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
                     onPress = {
                         val v = currentVm
                         var job: Job? = null
-                        if (!(v.tool == Tool.MASKS && v.selectedMask()?.type == MaskType.BRUSH) && v.tool != Tool.CROP) {
+                        if (!(v.tool == Tool.MASKS && v.selectedComponent()?.type == ComponentType.BRUSH) && v.tool != Tool.CROP && v.pickMode == PickMode.NONE) {
                             job = scope.launch {
                                 delay(420)
                                 v.showBefore = true
@@ -356,12 +369,13 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
                     var mode = 0 // 0 = indeciso, 1 = trascinamento singolo, 2 = multi-tocco
                     val slop = viewConfiguration.touchSlop
                     val singleKind: Int = when {
+                        v.pickMode != PickMode.NONE -> 5
                         v.tool == Tool.CROP && v.previewUncropped -> {
                             cropHit = cropHitTest(down.position)
                             if (cropHit != CropHit.NONE) 1 else 0
                         }
-                        v.tool == Tool.MASKS && v.selectedMask() != null -> {
-                            val m = v.selectedMask()!!
+                        v.tool == Tool.MASKS && v.selectedComponent() != null -> {
+                            val m = v.selectedComponent()!!
                             maskHit = maskHitTest(down.position, m)
                             maskStart = m
                             when (maskHit) {
@@ -382,7 +396,8 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
                     if (singleKind == 4) {
                         brushCursor = down.position
                         val uv = toCanvasUv(down.position)
-                        v.beginStroke(uv.x, uv.y)
+                        val so = toShownUv(down.position)
+                        v.beginStroke(uv.x, uv.y, so.x, so.y)
                         mode = 1
                     }
                     var last = down.position
@@ -411,7 +426,7 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
                             event.changes.forEach { if (it.positionChanged()) it.consume() }
                         } else if (mode != 2) {
                             val ch0 = pressed[0]
-                            if (mode == 0 && (ch0.position - down.position).getDistance() > slop && singleKind != 0) mode = 1
+                            if (mode == 0 && (ch0.position - down.position).getDistance() > slop && singleKind != 0 && singleKind != 5) mode = 1
                             if (mode == 1) {
                                 when (singleKind) {
                                     1 -> applyCropDrag(ch0.position)
@@ -426,7 +441,8 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
                                     4 -> {
                                         brushCursor = ch0.position
                                         val uv = toCanvasUv(ch0.position)
-                                        v.extendStroke(uv.x, uv.y)
+                                        val so = toShownUv(ch0.position)
+                                        v.extendStroke(uv.x, uv.y, so.x, so.y)
                                     }
                                 }
                                 ch0.consume()
@@ -441,6 +457,9 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
                         }
                     } else if (mode == 0 && singleKind == 4) {
                         v.endStroke()
+                    } else if (mode == 0 && singleKind == 5) {
+                        val so = toShownUv(last)
+                        v.onPick(so.x, so.y)
                     }
                     cropDragging = false
                     brushCursor = null
@@ -472,8 +491,8 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
                 }
             }
             if (cropMode && !vm.showBefore) drawCropOverlay(r, params, cropDragging)
-            if (maskMode && selectedMask != null && !vm.showBefore) {
-                drawMaskHandles(selectedMask, ::fromCanvasUv, screenPerCanvasPx(), drawCw, drawCh)
+            if (maskMode && selectedComp != null && !vm.showBefore && vm.pickMode == PickMode.NONE) {
+                drawMaskHandles(selectedComp, ::fromCanvasUv, screenPerCanvasPx(), drawCw, drawCh)
             }
             brushCursor?.let { pos ->
                 val radius = vm.brush.size * max(drawCw, drawCh) * screenPerCanvasPx() / 2f
@@ -495,6 +514,32 @@ fun Viewport(vm: EditorViewModel, modifier: Modifier = Modifier) {
                 color = Color.White,
                 modifier = Modifier.align(Alignment.TopStart).padding(12.dp)
             )
+        }
+        val banner = vm.aiBusy ?: vm.pickMode.hint.takeIf { it.isNotEmpty() }
+        if (banner != null) {
+            Row(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 10.dp, start = 12.dp, end = 12.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.72f))
+                    .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (vm.aiBusy != null) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = LuceColors.Accent)
+                    Spacer(Modifier.width(10.dp))
+                }
+                Text(banner, style = MaterialTheme.typography.labelMedium, color = Color.White)
+                if (vm.aiBusy == null) {
+                    Text(
+                        "Fine",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = LuceColors.Accent,
+                        modifier = Modifier.padding(start = 10.dp).clip(RoundedCornerShape(50)).clickable { vm.cancelPick() }.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
         }
         if (vm.rendering && image == null) {
             CircularProgressIndicator(Modifier.align(Alignment.Center).size(36.dp), color = LuceColors.Accent)
@@ -540,9 +585,9 @@ private fun DrawScope.handle(c: Offset, filled: Boolean = false) {
     drawCircle(Color.White, 7.dp.toPx(), c, style = Stroke(2.dp.toPx()))
 }
 
-private fun DrawScope.drawMaskHandles(m: Mask, map: (Float, Float) -> Offset, spp: Float, cw: Int, ch: Int) {
+private fun DrawScope.drawMaskHandles(m: MaskComponent, map: (Float, Float) -> Offset, spp: Float, cw: Int, ch: Int) {
     when (m.type) {
-        MaskType.RADIAL -> {
+        ComponentType.RADIAL -> {
             val c = map(m.cx, m.cy)
             val a = Math.toRadians(m.angle.toDouble())
             val ca = cos(a).toFloat()
@@ -567,7 +612,7 @@ private fun DrawScope.drawMaskHandles(m: Mask, map: (Float, Float) -> Offset, sp
             handle(Offset(c.x + rx * ca, c.y + rx * sa))
             handle(Offset(c.x - ry * sa, c.y + ry * ca))
         }
-        MaskType.LINEAR -> {
+        ComponentType.LINEAR -> {
             val p1 = map(m.x1, m.y1)
             val p2 = map(m.x2, m.y2)
             val d = p2 - p1
@@ -582,6 +627,6 @@ private fun DrawScope.drawMaskHandles(m: Mask, map: (Float, Float) -> Offset, sp
             handle(p2)
             handle(mid, filled = true)
         }
-        MaskType.BRUSH -> Unit
+        else -> Unit
     }
 }

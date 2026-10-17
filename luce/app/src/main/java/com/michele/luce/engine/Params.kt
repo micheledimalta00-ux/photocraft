@@ -27,15 +27,43 @@ data class GradeWheel(val hue: Float = 0f, val sat: Float = 0f, val lum: Float =
 
 enum class Treatment { COLOR, BW }
 
-enum class MaskType { LINEAR, RADIAL, BRUSH }
+/** Colore puntuale: un colore campionato e le variazioni da applicargli. */
+data class PointColor(
+    val id: Long,
+    val hue: Float,          // 0..360 colore campionato
+    val sat: Float,          // 0..1
+    val lum: Float,          // 0..1
+    val hueShift: Float = 0f,   // -100..100
+    val satShift: Float = 0f,   // -100..100
+    val lumShift: Float = 0f,   // -100..100
+    val variance: Float = 0f,   // -100..100
+    val range: Float = 50f,     // 0..100
+    val hueRange: Float = 50f,  // 0..100
+    val satRange: Float = 50f,  // 0..100
+    val lumRange: Float = 50f   // 0..100
+) {
+    val isNeutral: Boolean get() = hueShift == 0f && satShift == 0f && lumShift == 0f && variance == 0f
+}
 
-/** Un tratto di pennello. I punti sono coppie (u, v) normalizzate sulla tela prima del ritaglio. */
+// ---------------- Maschere ----------------
+
+enum class ComponentType { BRUSH, LINEAR, RADIAL, COLOR_RANGE, LUMINANCE_RANGE, AI }
+
+enum class CombineMode { ADD, SUBTRACT, INTERSECT }
+
+/**
+ * Un tratto di pennello. I punti sono coppie (u, v) normalizzate sulla tela prima del ritaglio.
+ * Con [autoMask] il tratto segue i bordi: [colors] contiene il colore (r, g, b) campionato in ogni punto.
+ */
 data class BrushStroke(
     val points: List<Float>,
     val size: Float = 0.05f,     // diametro come frazione del lato lungo
     val feather: Float = 0.5f,   // 0..1
     val flow: Float = 1f,        // 0..1
-    val erase: Boolean = false
+    val erase: Boolean = false,
+    val density: Float = 1f,     // 0..1 opacità massima
+    val autoMask: Boolean = false,
+    val colors: List<Float> = emptyList()
 )
 
 data class LocalAdjust(
@@ -47,18 +75,34 @@ data class LocalAdjust(
     val blacks: Float = 0f,
     val temperature: Float = 0f,
     val tint: Float = 0f,
+    val hue: Float = 0f,          // -180..180 gradi
     val saturation: Float = 0f,
+    val texture: Float = 0f,
     val clarity: Float = 0f,
     val dehaze: Float = 0f,
-    val texture: Float = 0f
+    val sharpness: Float = 0f,    // -100..100
+    val noise: Float = 0f,        // -100..100 (positivo = riduce il disturbo)
+    val moire: Float = 0f,        // -100..100
+    val defringe: Float = 0f,     // -100..100
+    val colorHue: Float = 0f,     // 0..360 colore di viraggio
+    val colorSat: Float = 0f      // 0..100
 ) {
     val isNeutral: Boolean get() = this == LocalAdjust()
+
+    fun scaled(f: Float): LocalAdjust = if (f == 1f) this else copy(
+        exposure = exposure * f, contrast = contrast * f, highlights = highlights * f, shadows = shadows * f,
+        whites = whites * f, blacks = blacks * f, temperature = temperature * f, tint = tint * f,
+        hue = hue * f, saturation = saturation * f, texture = texture * f, clarity = clarity * f,
+        dehaze = dehaze * f, sharpness = sharpness * f, noise = noise * f, moire = moire * f,
+        defringe = defringe * f, colorSat = colorSat * f
+    )
 }
 
-data class Mask(
+data class MaskComponent(
     val id: Long,
-    val name: String,
-    val type: MaskType,
+    val type: ComponentType,
+    val mode: CombineMode = CombineMode.ADD,
+    val invert: Boolean = false,
     // Lineare: l'effetto è pieno in (x1,y1) e nullo in (x2,y2)
     val x1: Float = 0.5f, val y1: Float = 0.3f,
     val x2: Float = 0.5f, val y2: Float = 0.6f,
@@ -67,11 +111,44 @@ data class Mask(
     val rx: Float = 0.25f, val ry: Float = 0.25f,
     val angle: Float = 0f,
     val feather: Float = 50f,     // 0..100
-    val invert: Boolean = false,
+    // Pennello
     val strokes: List<BrushStroke> = emptyList(),
+    // Intervallo colore: campioni (r, g, b) 0..1, fino a 5
+    val colorSamples: List<Float> = emptyList(),
+    val refine: Float = 50f,      // 0..100
+    // Intervallo luminanza (0..1)
+    val lumLo: Float = 0.25f,
+    val lumHi: Float = 0.75f,
+    val lumFeatherLo: Float = 0.1f,
+    val lumFeatherHi: Float = 0.1f,
+    val lumSmooth: Float = 0f,    // 0..100
+    // Selezione IA: chiave del raster calcolato sull'immagine
+    val aiKey: String = "",
+    val aiLabel: String = "",
+    val aiX: Float = 0.5f,        // punto toccato per "Oggetto" (coordinate della sorgente)
+    val aiY: Float = 0.5f
+) {
+    fun label(): String = when (type) {
+        ComponentType.BRUSH -> "Pennello"
+        ComponentType.LINEAR -> "Gradiente lineare"
+        ComponentType.RADIAL -> "Gradiente radiale"
+        ComponentType.COLOR_RANGE -> "Intervallo colore"
+        ComponentType.LUMINANCE_RANGE -> "Intervallo luminanza"
+        ComponentType.AI -> aiLabel.ifBlank { "Selezione" }
+    }
+}
+
+data class Mask(
+    val id: Long,
+    val name: String,
+    val components: List<MaskComponent>,
+    val amount: Float = 100f,     // 0..200 % sulle regolazioni
     val adjust: LocalAdjust = LocalAdjust(),
-    val visible: Boolean = true
-)
+    val visible: Boolean = true,
+    val invert: Boolean = false
+) {
+    val isActive: Boolean get() = visible && components.isNotEmpty() && amount > 0f && !adjust.isNeutral
+}
 
 data class EditParams(
     // Profilo
@@ -92,11 +169,14 @@ data class EditParams(
     val curveRed: ToneCurve = ToneCurve(),
     val curveGreen: ToneCurve = ToneCurve(),
     val curveBlue: ToneCurve = ToneCurve(),
-    // Curva parametrica (luci, chiari, scuri, ombre) -100..100
+    // Curva parametrica (luci, chiari, scuri, ombre) -100..100 e divisioni delle regioni 0..100
     val parHighlights: Float = 0f,
     val parLights: Float = 0f,
     val parDarks: Float = 0f,
     val parShadows: Float = 0f,
+    val parSplitShadows: Float = 25f,
+    val parSplitMidtones: Float = 50f,
+    val parSplitHighlights: Float = 75f,
 
     // Colore
     val temperature: Float = 0f,       // -100..100
@@ -106,6 +186,7 @@ data class EditParams(
     val hslHue: List<Float> = ZERO8,
     val hslSat: List<Float> = ZERO8,
     val hslLum: List<Float> = ZERO8,   // in bianco e nero funge da miscela B&N
+    val pointColors: List<PointColor> = emptyList(),
 
     // Color grading
     val gradeShadows: GradeWheel = GradeWheel(),
@@ -115,10 +196,20 @@ data class EditParams(
     val gradeBlending: Float = 50f,    // 0..100
     val gradeBalance: Float = 0f,      // -100..100
 
+    // Calibrazione
+    val calShadowsTint: Float = 0f,    // -100..100
+    val calRedHue: Float = 0f,
+    val calRedSat: Float = 0f,
+    val calGreenHue: Float = 0f,
+    val calGreenSat: Float = 0f,
+    val calBlueHue: Float = 0f,
+    val calBlueSat: Float = 0f,
+
     // Effetti
     val texture: Float = 0f,
     val clarity: Float = 0f,
     val dehaze: Float = 0f,
+    val vignetteStyle: Int = 0,        // 0 priorità luci, 1 priorità colore, 2 sovrapposizione pittura
     val vignetteAmount: Float = 0f,    // -100..100
     val vignetteMidpoint: Float = 50f, // 0..100
     val vignetteRoundness: Float = 0f, // -100..100
@@ -135,15 +226,38 @@ data class EditParams(
     val sharpMasking: Float = 0f,      // 0..100
     val nrLuminance: Float = 0f,       // 0..100
     val nrLumDetail: Float = 50f,      // 0..100
+    val nrLumContrast: Float = 0f,     // 0..100
     val nrColor: Float = 0f,           // 0..100
     val nrColorDetail: Float = 50f,    // 0..100
+    val nrColorSmooth: Float = 50f,    // 0..100
 
     // Ottica
+    val removeCA: Boolean = false,
     val lensDistortion: Float = 0f,    // -100..100
     val lensVignette: Float = 0f,      // -100..100 (correzione)
     val chromaticAberration: Float = 0f, // -100..100
+    val defringePurple: Float = 0f,    // 0..20
+    val defringePurpleHueLo: Float = 30f, // 0..100
+    val defringePurpleHueHi: Float = 70f,
+    val defringeGreen: Float = 0f,     // 0..20
+    val defringeGreenHueLo: Float = 40f,
+    val defringeGreenHueHi: Float = 60f,
 
-    // Geometria
+    // Geometria: Upright (valori calcolati) e trasformazioni manuali
+    val uprightMode: String = "Off",
+    val uprightAngle: Float = 0f,      // gradi
+    val uprightV: Float = 0f,          // prospettiva verticale (unità normalizzate)
+    val uprightH: Float = 0f,
+    val tVertical: Float = 0f,         // -100..100
+    val tHorizontal: Float = 0f,       // -100..100
+    val tRotate: Float = 0f,           // -10..10 gradi
+    val tAspect: Float = 0f,           // -100..100
+    val tScale: Float = 100f,          // 50..150
+    val tOffsetX: Float = 0f,          // -100..100
+    val tOffsetY: Float = 0f,          // -100..100
+    val constrainCrop: Boolean = false,
+
+    // Ritaglio
     val rotate90: Int = 0,             // 0..3, quarti di giro in senso orario
     val flipH: Boolean = false,
     val flipV: Boolean = false,
@@ -159,16 +273,29 @@ data class EditParams(
 ) {
     fun hasCrop(): Boolean = cropLeft > 0f || cropTop > 0f || cropRight < 1f || cropBottom < 1f
 
-    /** Mantiene solo le regolazioni (senza geometria), usato da predefiniti e copia/incolla. */
+    fun hasTransform(): Boolean = uprightAngle != 0f || uprightV != 0f || uprightH != 0f ||
+        tVertical != 0f || tHorizontal != 0f || tRotate != 0f || tAspect != 0f || tScale != 100f ||
+        tOffsetX != 0f || tOffsetY != 0f
+
+    /** Mantiene geometria e maschere di questa immagine, prende le regolazioni da [other]. */
     fun withAdjustmentsFrom(other: EditParams): EditParams = other.copy(
         rotate90 = rotate90, flipH = flipH, flipV = flipV, straighten = straighten,
         cropLeft = cropLeft, cropTop = cropTop, cropRight = cropRight, cropBottom = cropBottom,
-        aspect = aspect, masks = masks
+        aspect = aspect, masks = masks,
+        uprightMode = uprightMode, uprightAngle = uprightAngle, uprightV = uprightV, uprightH = uprightH,
+        tVertical = tVertical, tHorizontal = tHorizontal, tRotate = tRotate, tAspect = tAspect,
+        tScale = tScale, tOffsetX = tOffsetX, tOffsetY = tOffsetY, constrainCrop = constrainCrop
     )
 
     fun resetGeometry(): EditParams = copy(
         rotate90 = 0, flipH = false, flipV = false, straighten = 0f,
         cropLeft = 0f, cropTop = 0f, cropRight = 1f, cropBottom = 1f, aspect = "Libero"
+    )
+
+    fun resetTransform(): EditParams = copy(
+        uprightMode = "Off", uprightAngle = 0f, uprightV = 0f, uprightH = 0f,
+        tVertical = 0f, tHorizontal = 0f, tRotate = 0f, tAspect = 0f, tScale = 100f,
+        tOffsetX = 0f, tOffsetY = 0f, constrainCrop = false
     )
 
     fun isDefault(): Boolean = this == EditParams()
