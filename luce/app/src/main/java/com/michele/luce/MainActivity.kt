@@ -68,8 +68,8 @@ class MainActivity : ComponentActivity() {
     /** Autodiagnosi per i test automatici: attiva solo con l'extra esplicito. */
     private fun startSelfTest(intent: Intent?) {
         if (intent?.getBooleanExtra("luce_selftest", false) != true) return
-        val path = intent.getStringExtra("luce_selftest_file") ?: return
-        SelfTest.run(this, path)
+        val uri = intent.getStringExtra("luce_selftest_uri") ?: return
+        SelfTest.run(this, uri, intent.getStringExtra("luce_selftest_name") ?: "img")
     }
 
     @Suppress("DEPRECATION")

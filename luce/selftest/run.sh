@@ -10,14 +10,22 @@ adb install -r -g ../Luce.apk 2>&1 | tail -2
 adb shell pm grant $PKG android.permission.READ_MEDIA_IMAGES 2>/dev/null
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
-adb shell mkdir -p $DIR/Pictures
-for f in astronaut rocket coffee; do adb push $f.jpg $DIR/Pictures/$f.jpg >/dev/null; adb push $f.jpg /sdcard/Pictures/$f.jpg >/dev/null; done
+for f in astronaut rocket coffee; do adb push $f.jpg /sdcard/Pictures/$f.jpg >/dev/null; done
+# indicizza le foto nella galleria di sistema
+adb shell am start -n $PKG/.MainActivity >/dev/null; sleep 6
+for f in astronaut rocket coffee; do
+  adb shell content call --uri content://media --method scan_file --arg /sdcard/Pictures/$f.jpg >/dev/null 2>&1 || true
+done
+sleep 3
+adb shell content query --uri content://media/external/images/media --projection _id:_display_name > $OUT/media.txt
+cat $OUT/media.txt
+uri_of() { id=$(grep "_display_name=$1.jpg" $OUT/media.txt | sed -E 's/.*_id=([0-9]+).*/\1/' | head -1); echo "content://media/external/images/media/$id"; }
 adb logcat -c
 
 # 1) autodiagnosi
 for f in astronaut rocket coffee; do
   adb shell am force-stop $PKG
-  adb shell am start -n $PKG/.MainActivity --ez luce_selftest true --es luce_selftest_file $DIR/Pictures/$f.jpg
+  adb shell am start -n $PKG/.MainActivity --ez luce_selftest true --es luce_selftest_uri "$(uri_of $f)" --es luce_selftest_name $f
   for i in $(seq 1 90); do
     if adb shell cat $DIR/selftest/report_$f.txt 2>/dev/null | grep -q "^FINE"; then break; fi
     sleep 2
@@ -28,7 +36,7 @@ adb pull $DIR/selftest $OUT/files >/dev/null 2>&1
 
 # 2) interfaccia: editor in verticale
 adb shell am force-stop $PKG
-adb shell am start -a android.intent.action.VIEW -d content://$PKG.files/camera/astronaut.jpg -t image/jpeg -n $PKG/.MainActivity
+adb shell am start -a android.intent.action.VIEW -d "$(uri_of astronaut)" -t image/jpeg -n $PKG/.MainActivity
 sleep 10
 $UI shot 01_luce
 $UI tap "Colore" bottom; sleep 3; $UI shot 02_colore
@@ -52,7 +60,7 @@ adb shell settings put system user_rotation 0
 sleep 4
 # cielo sulla foto del razzo
 adb shell am force-stop $PKG
-adb shell am start -a android.intent.action.VIEW -d content://$PKG.files/camera/rocket.jpg -t image/jpeg -n $PKG/.MainActivity
+adb shell am start -a android.intent.action.VIEW -d "$(uri_of rocket)" -t image/jpeg -n $PKG/.MainActivity
 sleep 10
 $UI tap "Maschere" bottom; sleep 3
 $UI tap "Cielo"; sleep 25; $UI shot 16_cielo

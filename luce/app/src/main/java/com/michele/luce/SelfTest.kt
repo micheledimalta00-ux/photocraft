@@ -35,11 +35,12 @@ import kotlin.math.max
 object SelfTest {
     private const val TAG = "LuceSelfTest"
 
-    fun run(context: Context, path: String) {
+    fun run(context: Context, uriString: String, label: String) {
         val app = context.applicationContext
         thread(name = "luce-selftest") {
             val out = File(app.getExternalFilesDir(null), "selftest").apply { mkdirs() }
-            val name = File(path).nameWithoutExtension
+            val name = label.ifBlank { "img" }
+            val source = Uri.parse(uriString)
             val report = StringBuilder()
             fun log(s: String) {
                 report.appendLine(s)
@@ -66,7 +67,7 @@ object SelfTest {
             }
             try {
                 val t0 = System.currentTimeMillis()
-                val loaded = BitmapIO.load(app, Uri.fromFile(File(path)), 1600)
+                val loaded = BitmapIO.load(app, source, 1600)
                 log("immagine ${loaded.img.width}x${loaded.img.height} (originale ${loaded.originalWidth}x${loaded.originalHeight}) in ${System.currentTimeMillis() - t0} ms")
                 val guide = BitmapIO.downscale(loaded.img, 1024)
                 val input = BitmapIO.toBitmap(BitmapIO.downscale(loaded.img, 512))
@@ -138,7 +139,7 @@ object SelfTest {
                 log("sviluppo completo ${final.width}x${final.height} in ${System.currentTimeMillis() - s} ms")
                 save(final, "final_$name.jpg")
                 val s2 = System.currentTimeMillis()
-                val exp = Exporter.render(app, Uri.fromFile(File(path)), p, ExportSettings(longEdge = 2048), rasters) { false }
+                val exp = Exporter.render(app, source, p, ExportSettings(longEdge = 2048), rasters) { false }
                 FileOutputStream(File(out, "export_$name.jpg")).use { exp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
                 log("esportazione ${exp.width}x${exp.height} in ${System.currentTimeMillis() - s2} ms")
                 exp.recycle()
