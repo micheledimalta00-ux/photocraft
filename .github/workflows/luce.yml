@@ -87,3 +87,45 @@ jobs:
           body: |
             APK di Luce, editor fotografico open source per Android.
             Scarica **Luce.apk** dal telefono e installalo (consenti l'installazione da origini sconosciute).
+
+  # Prova su un emulatore Android: autodiagnosi delle maschere IA e navigazione con screenshot.
+  smoke:
+    needs: apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Luce-apk
+          path: luce
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Emulatore
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash luce/selftest/run.sh
+
+      - name: Pubblica i risultati
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: luce-selftest
+          name: Luce — risultati dei test sull'emulatore
+          prerelease: true
+          files: |
+            luce/selftest/selftest-out/*
+            luce/selftest/selftest-out/files/*

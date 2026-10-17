@@ -47,7 +47,10 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
         super.onCreate(savedInstanceState)
-        if (savedInstanceState == null) incoming.value = extractUri(intent)
+        if (savedInstanceState == null) {
+            incoming.value = extractUri(intent)
+            startSelfTest(intent)
+        }
         setContent {
             LuceTheme {
                 LuceApp(incoming)
@@ -59,6 +62,14 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         extractUri(intent)?.let { incoming.value = it }
+        startSelfTest(intent)
+    }
+
+    /** Autodiagnosi per i test automatici: attiva solo con l'extra esplicito. */
+    private fun startSelfTest(intent: Intent?) {
+        if (intent?.getBooleanExtra("luce_selftest", false) != true) return
+        val path = intent.getStringExtra("luce_selftest_file") ?: return
+        SelfTest.run(this, path)
     }
 
     @Suppress("DEPRECATION")
