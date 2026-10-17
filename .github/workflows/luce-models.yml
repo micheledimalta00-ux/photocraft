@@ -1,0 +1,41 @@
+name: luce-models
+
+# Scarica i modelli di segmentazione usati dalle maschere IA di Luce e li pubblica
+# nella release "luce-models" (fonte unica per la build dell'APK).
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/luce-models.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  models:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download
+        run: |
+          mkdir -p m && cd m
+          get() { if curl -fsSL --retry 3 -o "$1" "$2"; then echo "::warning title=OK $1::$(stat -c %s "$1") byte da $2"; else echo "::warning title=MANCA $1::$2"; rm -f "$1"; fi; }
+          B=https://storage.googleapis.com/mediapipe-models
+          get selfie_multiclass.tflite $B/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite
+          get deeplab_v3.tflite $B/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite
+          get magic_touch.tflite $B/interactive_segmenter/magic_touch/float32/1/magic_touch.tflite
+          get face_landmarker.task $B/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+          get hair_segmenter.tflite $B/image_segmenter/hair_segmenter/float32/latest/hair_segmenter.tflite
+          get ade20k_a.tflite https://storage.googleapis.com/tfhub-lite-models/sayakpaul/lite-model/deeplabv3-mobilenetv2-ade20k/1/default/2.tflite
+          get ade20k_b.tflite "https://tfhub.dev/sayakpaul/lite-model/deeplabv3-mobilenetv2-ade20k/1/default/2?lite-format=tflite"
+          get ade20k_c.tgz "https://www.kaggle.com/api/v1/models/sayakpaul/deeplabv3-mobilenetv2-ade20k/tfLite/default/2/download"
+          get ade20k_d.tgz "https://www.kaggle.com/api/v1/models/sayakpaul/deeplabv3-mobilenetv2-ade20k/tfLite/default/1/download"
+          get ade20k_e.tflite "https://storage.googleapis.com/download.tensorflow.org/models/tflite/gpu/deeplabv3_257_mv_gpu.tflite"
+          ls -la
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: luce-models
+          name: Luce — modelli IA
+          prerelease: true
+          files: m/*
