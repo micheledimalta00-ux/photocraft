@@ -1,0 +1,68 @@
+name: luce-guide
+
+# Materiale per la guida di Luce: foto di esempio (Kodak Photo CD) e screenshot dell'app su emulatore.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/luce-guide.yml"
+      - "luce/selftest/guide.sh"
+
+permissions:
+  contents: write
+
+jobs:
+  photos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Foto di esempio
+        run: |
+          mkdir -p k && cd k
+          for i in $(seq -w 1 24); do
+            curl -fsSL --retry 3 -o kodim$i.png "http://r0k.us/graphics/kodak/kodak/kodim$i.png" || echo "manca $i"
+          done
+          ls -la
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: luce-guide-photos
+          name: Luce — foto per la guida
+          prerelease: true
+          files: k/*
+
+  shots:
+    needs: photos
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: APK e foto
+        run: |
+          tag=$(curl -fsSL "https://api.github.com/repos/${{ github.repository }}/releases?per_page=40" | python3 -c "import sys,json;r=[x['tag_name'] for x in json.load(sys.stdin) if x['tag_name'].startswith('luce-build-')];r.sort(key=lambda t:int(t.split('-')[-1]));print(r[-1])")
+          echo "APK da $tag"
+          curl -fsSL -o luce/Luce.apk "https://github.com/${{ github.repository }}/releases/download/$tag/Luce.apk"
+          for i in 03 04 05 07 13 15 16 18 21 22 23 24; do
+            curl -fsSL -o luce/selftest/kodim$i.png "https://github.com/${{ github.repository }}/releases/download/luce-guide-photos/kodim$i.png"
+          done
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash luce/selftest/guide.sh
+      - uses: softprops/action-gh-release@v2
+        if: always()
+        with:
+          tag_name: luce-guide-shots
+          name: Luce — screenshot per la guida
+          prerelease: true
+          files: luce/selftest/guide-out/*
