@@ -17,7 +17,8 @@ adb shell content query --uri content://media/external/images/media --projection
 uri_of() { id=$(grep "_display_name=$1" $OUT/media.txt | sed -E 's/.*_id=([0-9]+).*/\1/' | head -1); echo "content://media/external/images/media/$id"; }
 open_img() { adb shell am force-stop $PKG; adb shell am start -a android.intent.action.VIEW -d "$(uri_of $1)" -t image/png -n $PKG/.MainActivity >/dev/null; sleep 9; }
 panel_up() { adb shell input swipe 540 2050 540 1450 400; sleep 1.5; }
-back_masks() { $UI tap "Tutte le maschere"; sleep 1; }
+panel_top() { for i in 1 2 3 4 5; do adb shell input swipe 540 1450 540 2150 300; sleep 0.8; done; }
+back_masks() { panel_top; $UI tap "Tutte le maschere"; sleep 1.5; panel_top; }
 
 # libreria
 adb shell am force-stop $PKG; adb shell am start -n $PKG/.MainActivity >/dev/null; sleep 7
@@ -28,15 +29,15 @@ open_img kodim04.png
 $UI shot g02_luce
 panel_up; panel_up; $UI shot g03_curva
 $UI tap "Parametrica"; sleep 2; panel_up; $UI shot g04_curva_parametrica
-$UI tap "Colore" bottom; sleep 2; $UI shot g05_colore_base
-$UI tap "Colore puntuale"; sleep 1; $UI tap "Campiona un colore"; sleep 1
+$UI tap "Colore" bottom; sleep 2; panel_top; $UI shot g05_colore_base
+panel_top; $UI tap "Colore puntuale"; sleep 1; $UI tap "Campiona un colore"; sleep 1
 adb shell input tap 540 520; sleep 4; $UI shot g06_colore_puntuale
-$UI tap "Miscelazione"; sleep 2; $UI shot g07_miscelazione
-$UI tap "Color grading"; sleep 2; $UI shot g08_color_grading
-$UI tap "Calibrazione"; sleep 2; $UI shot g09_calibrazione
-$UI tap "Effetti" bottom; sleep 2; $UI shot g10_effetti
-$UI tap "Dettaglio" bottom; sleep 2; $UI shot g11_dettaglio
-$UI tap "Ottica" bottom; sleep 2; $UI shot g12_ottica
+panel_top; $UI tap "Miscelazione"; sleep 2; $UI shot g07_miscelazione
+panel_top; $UI tap "Color grading"; sleep 2; $UI shot g08_color_grading
+panel_top; $UI tap "Calibrazione"; sleep 2; $UI shot g09_calibrazione
+$UI tap "Effetti" bottom; sleep 2; panel_top; $UI shot g10_effetti
+$UI tap "Dettaglio" bottom; sleep 2; panel_top; $UI shot g11_dettaglio
+$UI tap "Ottica" bottom; sleep 2; panel_top; $UI shot g12_ottica
 $UI tap "Geometria" bottom; sleep 2; $UI shot g13_geometria
 $UI tap "Ritaglia" bottom; sleep 3; $UI shot g14_ritaglia
 $UI tap "Profili" bottom; sleep 8; $UI shot g15_profili
