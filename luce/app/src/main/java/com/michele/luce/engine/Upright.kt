@@ -96,11 +96,15 @@ object Upright {
             if (abs(den) > 1e-6f) level += (0.5f * (a - c) / den) * 0.25f
         }
         val total = hist.sum()
-        if (total < 1f) level = 0f
+        // affidabilità: quota di bordi concentrata attorno al picco
+        var peakMass = 0f
+        for (d in -6..6) { val j = best + d; if (j in 0 until bins) peakMass += hist[j] }
+        val pixels = (w * h).toFloat()
+        if (total < pixels * 0.004f || peakMass < total * 0.3f) level = 0f
 
         // convergenza: deviazione (radianti) = k·x + b
-        val kv = fitSlope(vx, vd, vw)
-        val kh = fitSlope(hy, hd, hw)
+        val kv = if (reliable(vx, vw, w * h)) fitSlope(vx, vd, vw) else 0f
+        val kh = if (reliable(hy, hw, w * h)) fitSlope(hy, hd, hw) else 0f
         val vert = (Math.toRadians(kv.toDouble()).toFloat()).coerceIn(-0.6f, 0.6f)
         val horiz = (-Math.toRadians(kh.toDouble()).toFloat()).coerceIn(-0.6f, 0.6f)
         return Result(level.coerceIn(-12f, 12f), vert, horiz)
@@ -113,6 +117,17 @@ object Upright {
         "Completo" -> Triple(-r.angle, -r.vertical * GAIN, -r.horizontal * GAIN)
         "Auto" -> Triple(-r.angle, -r.vertical * GAIN * 0.85f, -r.horizontal * GAIN * 0.6f)
         else -> Triple(0f, 0f, 0f)
+    }
+
+    /** Servono abbastanza bordi e distribuiti su gran parte dell'immagine. */
+    private fun reliable(pos: List<Float>, ws: List<Float>, pixels: Int): Boolean {
+        if (pos.size < max(200, pixels / 400)) return false
+        var sw = 0.0; var sx = 0.0; var sxx = 0.0
+        for (i in pos.indices) { val w = ws[i].toDouble(); val x = pos[i].toDouble(); sw += w; sx += w * x; sxx += w * x * x }
+        if (sw <= 0.0) return false
+        val mean = sx / sw
+        val std = sqrt(max(0.0, sxx / sw - mean * mean))
+        return std > 0.12
     }
 
     /** Regressione pesata robusta (due passate) della pendenza di d rispetto a x. */
@@ -141,7 +156,11 @@ object Upright {
             if (sorted.isEmpty()) return k
             val lim = max(0.5f, sorted[(sorted.size * 0.6f).toInt().coerceAtMost(sorted.size - 1)])
             keep = BooleanArray(xs.size) { res[it] <= lim }
-            if (pass == 2) return k
+            if (pass == 2) {
+                // le linee devono seguire davvero il modello: residuo mediano piccolo
+                val med = sorted[sorted.size / 2]
+                return if (med < 1.2f) k else 0f
+            }
         }
         return k
     }
