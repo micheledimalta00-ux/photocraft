@@ -51,7 +51,15 @@ class AiSegmenter(context: Context) : Closeable {
         return ImageSegmenter.createFromOptions(app, opts)
     }
 
-    private fun mp(bitmap: Bitmap): MPImage = BitmapImageBuilder(bitmap).build()
+    /**
+     * MediaPipe ricicla la bitmap quando l'MPImage viene chiuso: si lavora sempre su una copia,
+     * così la bitmap del chiamante resta valida per le chiamate successive.
+     */
+    private fun mp(bitmap: Bitmap): MPImage {
+        check(!bitmap.isRecycled) { "Immagine non più disponibile" }
+        val copy = bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: throw IllegalStateException("Memoria insufficiente")
+        return BitmapImageBuilder(copy).build()
+    }
 
     private fun floats(img: MPImage): FloatArray {
         val buf = ByteBufferExtractor.extract(img)
@@ -70,8 +78,9 @@ class AiSegmenter(context: Context) : Closeable {
         return out
     }
 
-    private fun confidences(seg: ImageSegmenter, input: MPImage, w: Int, h: Int): Array<FloatArray> {
-        val res = seg.segment(input)
+    private fun confidences(seg: ImageSegmenter, bitmap: Bitmap, w: Int, h: Int): Array<FloatArray> {
+        val input = mp(bitmap)
+        val res = try { seg.segment(input) } finally { input.close() }
         val masks = res.confidenceMasks().orElse(null) ?: throw IllegalStateException("Il modello non ha prodotto maschere")
         return Array(masks.size) { i ->
             val m = masks[i]
@@ -90,19 +99,19 @@ class AiSegmenter(context: Context) : Closeable {
         val w = input.width
         val h = input.height
         val data = into?.takeIf { it.w == w && it.h == h } ?: AiMasks.SegData(w, h)
-        val image = mp(input)
-        try {
+        run {
             if (Need.DEEPLAB in needs && data.deeplab == null) {
                 val s = deeplab ?: segmenter("deeplab_v3.tflite", false).also { deeplab = it }
-                data.deeplab = confidences(s, image, w, h)
+                data.deeplab = confidences(s, input, w, h)
             }
             if (Need.SELFIE in needs && data.selfie == null) {
                 val s = selfie ?: segmenter("selfie_multiclass.tflite", false).also { selfie = it }
-                data.selfie = confidences(s, image, w, h)
+                data.selfie = confidences(s, input, w, h)
             }
             if (Need.ADE in needs && data.ade == null) {
                 val s = ade ?: segmenter("ade20k.tflite", true).also { ade = it }
-                val res = s.segment(image)
+                val img = mp(input)
+                val res = try { s.segment(img) } finally { img.close() }
                 val cat = res.categoryMask().orElse(null) ?: throw IllegalStateException("Il modello del paesaggio non ha prodotto risultati")
                 val b = bytes(cat)
                 cat.close()
@@ -135,8 +144,6 @@ class AiSegmenter(context: Context) : Closeable {
                 }
                 data.facesDone = true
             }
-        } finally {
-            image.close()
         }
         return data
     }

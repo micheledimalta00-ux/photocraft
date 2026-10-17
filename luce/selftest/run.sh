@@ -26,7 +26,7 @@ adb logcat -c
 for f in astronaut rocket coffee; do
   adb shell am force-stop $PKG
   adb shell am start -n $PKG/.MainActivity --ez luce_selftest true --es luce_selftest_uri "$(uri_of $f)" --es luce_selftest_name $f
-  for i in $(seq 1 90); do
+  for i in $(seq 1 300); do
     if adb shell cat $DIR/selftest/report_$f.txt 2>/dev/null | grep -q "^FINE"; then break; fi
     sleep 2
   done
@@ -53,11 +53,13 @@ $UI tap "Ottica" bottom; sleep 2; $UI shot 12_ottica
 $UI tap "Luce" bottom; sleep 2; $UI tap "Ritaglio"; sleep 4; $UI shot 13_ritaglio_luci
 # orizzontale
 adb shell settings put system user_rotation 1
-sleep 6
+adb shell cmd window user-rotation lock 1
+sleep 8
 $UI shot 14_orizzontale
 $UI tap "Maschere"; sleep 3; $UI shot 15_orizzontale_maschere
 adb shell settings put system user_rotation 0
-sleep 4
+adb shell cmd window user-rotation lock 0
+sleep 5
 # cielo sulla foto del razzo
 adb shell am force-stop $PKG
 adb shell am start -a android.intent.action.VIEW -d "$(uri_of rocket)" -t image/jpeg -n $PKG/.MainActivity
