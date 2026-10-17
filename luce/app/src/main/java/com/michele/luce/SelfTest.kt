@@ -119,7 +119,7 @@ object SelfTest {
                     Mask(4, "Occhi", listOf(MaskComponent(6, ComponentType.AI, aiKey = "iris"), MaskComponent(7, ComponentType.AI, aiKey = "sclera")), adjust = LocalAdjust(exposure = 0.5f, saturation = 20f)),
                     Mask(5, "Rossi", listOf(MaskComponent(8, ComponentType.COLOR_RANGE, colorSamples = listOf(0.8f, 0.3f, 0.2f)), MaskComponent(9, ComponentType.RADIAL, CombineMode.SUBTRACT, cx = 0.1f, cy = 0.1f)), adjust = LocalAdjust(hue = 15f, colorHue = 30f, colorSat = 20f)),
                     Mask(6, "Ombre", listOf(MaskComponent(10, ComponentType.LUMINANCE_RANGE, lumLo = 0f, lumHi = 0.3f, lumSmooth = 30f)), adjust = LocalAdjust(shadows = 40f, noise = 30f, moire = 20f)),
-                    Mask(7, "Pennello", listOf(MaskComponent(11, ComponentType.BRUSH, strokes = listOf(BrushStroke(listOf(0.2f, 0.8f, 0.5f, 0.85f, 0.8f, 0.8f), 0.1f, autoMask = true, colors = listOf(0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f)))), invert = false, adjust = LocalAdjust(dehaze = 20f, defringe = 40f)),
+                    Mask(7, "Pennello", listOf(MaskComponent(11, ComponentType.BRUSH, strokes = listOf(BrushStroke(listOf(0.2f, 0.8f, 0.5f, 0.85f, 0.8f, 0.8f), 0.1f, autoMask = true, colors = listOf(0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f))))), invert = false, adjust = LocalAdjust(dehaze = 20f, defringe = 40f)),
                     Mask(8, "Oggetto", listOf(MaskComponent(12, ComponentType.AI, aiKey = "object:1")), amount = 150f, adjust = LocalAdjust(whites = 20f, blacks = -20f), invert = true)
                 )
                 val p = EditParams(
